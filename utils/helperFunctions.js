@@ -19,6 +19,14 @@ function isTimeOverlap(start1, end1, start2, end2) {
   return start1 < end2 && start2 < end1;
 }
 
+
+// Convert minutes back to "HH:MM"
+function minutesToTime(mins) {
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+}
+
 // Helper: convert "HH:MM" to minutes
 function timeToMinutes(time) {
   const [h, m] = time.split(":").map(Number);
@@ -49,4 +57,4 @@ function calculatePrice(pricesArray, startTime, duration) {
   return total;
 }
 
-module.exports = { capitalizeWords, isTimeOverlap, timeToMinutes, calculatePrice };
+module.exports = { capitalizeWords, isTimeOverlap, timeToMinutes, calculatePrice, minutesToTime };
