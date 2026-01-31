@@ -2,27 +2,45 @@ const express = require('express');
 const router = express.Router();
 const Booking = require('../models/Booking');
 const Academy = require('../models/Academy');
-const { isTimeOverlap, timeToMinutes, calculatePrice } = require('../utils/helperFunctions');
+const { isTimeOverlap, timeToMinutes, calculatePrice, minutesToTime } = require('../utils/helperFunctions');
 
 router.post('/create', async (req, res) => {
-  const { userEmail, academyId, sport, courtNumber, date, startTime, endTime } = req.body;
+  const { userEmail, academyId, sport, courtNumber, date, startTime, duration } = req.body;
 
   try {
-    const existingBooking = await Booking.findOne({ academyId, sport, courtNumber, date, startTime });
-    if (existingBooking) return res.status(400).json({ message: 'Slot already booked' });
-
     const academy = await Academy.findById(academyId);
     if (!academy) return res.status(404).json({ message: 'Academy not found' });
 
     const sportData = academy.sports.find(s => s.sportName === sport);
     if (!sportData) return res.status(404).json({ message: 'Sport not offered' });
 
-    const court = sportData.pricing.find(p => p.courtNumber === courtNumber);
-    const slot = court.prices.find(p => p.time === startTime);
-    if (!slot) return res.status(404).json({ message: 'Invalid start time' });
+    // Check if requested time is within academy hours
+    const requestedStart = timeToMinutes(startTime);
+    const requestedEnd = requestedStart + duration;
+    const academyStart = timeToMinutes(sportData.startTime);
+    const academyEnd = timeToMinutes(sportData.endTime);
 
-    const price = slot.price;
+    if (requestedStart < academyStart || requestedEnd > academyEnd) {
+      return res.status(400).json({ message: 'Requested time outside academy hours' });
+    }
 
+    // Check for overlapping bookings
+    const bookings = await Booking.find({ academyId, sport, courtNumber, date });
+    for (let b of bookings) {
+      const bookingStart = timeToMinutes(b.startTime);
+      const bookingEnd = timeToMinutes(b.endTime);
+      if (isTimeOverlap(requestedStart, requestedEnd, bookingStart, bookingEnd)) {
+        return res.status(400).json({ message: 'Slot already booked' });
+      }
+    }
+
+    // Calculate price proportionally
+    const courtPricing = sportData.pricing.find(p => p.courtNumber === courtNumber);
+    if (!courtPricing) return res.status(404).json({ message: 'Court pricing not found' });
+
+    const price = calculatePrice(courtPricing.prices, startTime, duration);
+
+    // Create booking
     const newBooking = new Booking({
       userEmail,
       academyId,
@@ -30,7 +48,7 @@ router.post('/create', async (req, res) => {
       courtNumber,
       date,
       startTime,
-      endTime,
+      endTime: minutesToTime(requestedEnd),
       price
     });
 
