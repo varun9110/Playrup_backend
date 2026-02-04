@@ -8,7 +8,12 @@ const bookingSchema = new mongoose.Schema({
   date: String,
   startTime: String,
   endTime: String,
-  price: Number
+  price: Number,
+  status: {
+    type: String,
+    enum: ['Confirmed', 'Cancelled'],
+    default: 'Confirmed'
+  }
 });
 
 module.exports = mongoose.model('Booking', bookingSchema);

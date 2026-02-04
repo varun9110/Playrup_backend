@@ -2,8 +2,14 @@ const express = require('express');
 const router = express.Router();
 const Booking = require('../models/Booking');
 const Academy = require('../models/Academy');
-const { isTimeOverlap, timeToMinutes, calculatePrice, minutesToTime } = require('../utils/helperFunctions');
+const {
+  isTimeOverlap,
+  timeToMinutes,
+  calculatePrice,
+  minutesToTime
+} = require('../utils/helperFunctions');
 
+// CREATE BOOKING
 router.post('/create', async (req, res) => {
   const { userEmail, academyId, sport, courtNumber, date, startTime, duration } = req.body;
 
@@ -14,7 +20,6 @@ router.post('/create', async (req, res) => {
     const sportData = academy.sports.find(s => s.sportName === sport);
     if (!sportData) return res.status(404).json({ message: 'Sport not offered' });
 
-    // Check if requested time is within academy hours
     const requestedStart = timeToMinutes(startTime);
     const requestedEnd = requestedStart + duration;
     const academyStart = timeToMinutes(sportData.startTime);
@@ -24,8 +29,15 @@ router.post('/create', async (req, res) => {
       return res.status(400).json({ message: 'Requested time outside academy hours' });
     }
 
-    // Check for overlapping bookings
-    const bookings = await Booking.find({ academyId, sport, courtNumber, date });
+    // Only consider ACTIVE bookings (ignore Cancelled)
+    const bookings = await Booking.find({
+      academyId,
+      sport,
+      courtNumber,
+      date,
+      status: 'Confirmed'
+    });
+
     for (let b of bookings) {
       const bookingStart = timeToMinutes(b.startTime);
       const bookingEnd = timeToMinutes(b.endTime);
@@ -34,13 +46,11 @@ router.post('/create', async (req, res) => {
       }
     }
 
-    // Calculate price proportionally
     const courtPricing = sportData.pricing.find(p => p.courtNumber === courtNumber);
     if (!courtPricing) return res.status(404).json({ message: 'Court pricing not found' });
 
     const price = calculatePrice(courtPricing.prices, startTime, duration);
 
-    // Create booking
     const newBooking = new Booking({
       userEmail,
       academyId,
@@ -49,7 +59,8 @@ router.post('/create', async (req, res) => {
       date,
       startTime,
       endTime: minutesToTime(requestedEnd),
-      price
+      price,
+      status: 'Confirmed'
     });
 
     await newBooking.save();
@@ -60,20 +71,22 @@ router.post('/create', async (req, res) => {
   }
 });
 
+// SEARCH ACADEMIES (ignore cancelled bookings indirectly)
 router.post('/search', async (req, res) => {
   const { city, sport, date } = req.body;
 
   if (!city || !sport || !date) {
-      return res.status(400).json({ message: "City and sport are required" });
-    }
+    return res.status(400).json({ message: "City and sport are required" });
+  }
 
   try {
-    // Find academies in the city that have the sport
     const academies = await Academy.find({
       city: city.toLowerCase(),
       "sports.sportName": sport
     });
 
+    // Optional: You could filter out academies that have no available courts
+    // but that's usually done in check-availability endpoint
     res.status(200).json({ academies });
   } catch (err) {
     console.error(err);
@@ -81,15 +94,15 @@ router.post('/search', async (req, res) => {
   }
 });
 
-// API: Get available courts
+// CHECK AVAILABILITY
 router.post('/check-availability', async (req, res) => {
-   try {
+  try {
     const { academyId, sport, date, startTime, duration } = req.body;
 
     const academy = await Academy.findById(academyId);
     if (!academy) return res.status(404).json({ message: 'Academy not found' });
 
-    const sportData = academy.sports.find((s) => s.sportName === sport);
+    const sportData = academy.sports.find(s => s.sportName === sport);
     if (!sportData) return res.status(404).json({ message: 'Sport not found in this academy' });
 
     const courts = [];
@@ -99,21 +112,21 @@ router.post('/check-availability', async (req, res) => {
     const academyEnd = timeToMinutes(sportData.endTime);
 
     for (let i = 1; i <= sportData.numberOfCourts; i++) {
-      // Check if requested time is within court operating hours
+      // Ignore times outside academy hours
       if (requestedStart < academyStart || requestedEnd > academyEnd) {
         courts.push({ courtNumber: i, available: false, price: 0 });
         continue;
       }
 
-      // Find existing bookings for this court
+      // Only consider ACTIVE bookings (ignore Cancelled)
       const bookings = await Booking.find({
         academyId,
         sport,
         courtNumber: i,
         date,
+        status: 'Confirmed'
       });
 
-      // Check if any booking overlaps
       let available = true;
       for (let b of bookings) {
         const bookingStart = timeToMinutes(b.startTime);
@@ -124,10 +137,9 @@ router.post('/check-availability', async (req, res) => {
         }
       }
 
-      // Calculate price for the requested duration
       let price = 0;
       if (available) {
-        const courtPricing = sportData.pricing.find((p) => p.courtNumber === i);
+        const courtPricing = sportData.pricing.find(p => p.courtNumber === i);
         if (courtPricing) {
           price = calculatePrice(courtPricing.prices, startTime, duration);
         }
@@ -143,11 +155,15 @@ router.post('/check-availability', async (req, res) => {
   }
 });
 
+// MY BOOKINGS
 router.post('/my-bookings', async (req, res) => {
   try {
     const { userEmail } = req.body;
-    const bookings = await Booking.find({ userEmail })
+
+    // Only fetch bookings that are still active (Confirmed)
+    const bookings = await Booking.find({ userEmail, status: 'Confirmed' })
       .populate('academyId', 'name address city');
+
     res.json(bookings);
   } catch (err) {
     console.error(err);
@@ -155,16 +171,103 @@ router.post('/my-bookings', async (req, res) => {
   }
 });
 
-// New route to cancel booking
-router.delete('/cancel/:bookingId', async (req, res) => {
+// Soft cancel booking by updating status
+router.post('/cancel-booking', async (req, res) => {
   try {
-    await Booking.findByIdAndDelete(req.params.bookingId);
-    res.json({ message: 'Booking cancelled' });
+    const { bookingId, userEmail } = req.body;
+
+    const booking = await Booking.findOne({ _id: bookingId, userEmail, status: 'Confirmed' });
+    if (!booking) {
+      return res.status(404).json({ message: 'Booking not found or already cancelled' });
+    }
+
+    booking.status = 'Cancelled';
+    await booking.save();
+
+    res.json({ message: 'Booking cancelled successfully', booking });
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: 'Failed to cancel booking' });
   }
 });
+
+// MODIFY / RESCHEDULE BOOKING
+router.patch('/modify-booking', async (req, res) => {
+  try {
+    const { bookingId, userEmail, academyId, sport, courtNumber, date, startTime, duration } = req.body;
+
+    // Find the booking to modify
+    const booking = await Booking.findOne({ _id: bookingId, userEmail, status: 'Confirmed' });
+    if (!booking) {
+      return res.status(404).json({ message: 'Booking not found or already cancelled' });
+    }
+
+    // Validate academy and sport
+    const academy = await Academy.findById(academyId);
+    if (!academy) return res.status(404).json({ message: 'Academy not found' });
+
+    const sportData = academy.sports.find(s => s.sportName === sport);
+    if (!sportData) return res.status(404).json({ message: 'Sport not offered' });
+
+    // Convert startTime and duration to minutes
+    const requestedStart = timeToMinutes(startTime);
+    const requestedEnd = requestedStart + duration;
+    const academyStart = timeToMinutes(sportData.startTime);
+    const academyEnd = timeToMinutes(sportData.endTime);
+
+    // Check academy hours
+    if (requestedStart < academyStart || requestedEnd > academyEnd) {
+      return res.status(400).json({ message: 'Requested time outside academy hours' });
+    }
+
+    // Check for overlapping bookings on the same court
+    const overlappingBookings = await Booking.find({
+      _id: { $ne: bookingId },  // exclude the booking being modified
+      academyId,
+      sport,
+      courtNumber,
+      date,
+      status: 'Confirmed'
+    });
+
+    for (let b of overlappingBookings) {
+      const bookingStart = timeToMinutes(b.startTime);
+      const bookingEnd = timeToMinutes(b.endTime);
+      if (isTimeOverlap(requestedStart, requestedEnd, bookingStart, bookingEnd)) {
+        return res.status(400).json({ message: 'Requested slot is already booked' });
+      }
+    }
+
+    // Calculate new price
+    const courtPricing = sportData.pricing.find(p => p.courtNumber === courtNumber);
+    if (!courtPricing) return res.status(404).json({ message: 'Court pricing not found' });
+
+    const price = calculatePrice(courtPricing.prices, startTime, duration);
+
+    // Update booking
+    booking.date = date;
+    booking.startTime = startTime;
+    booking.endTime = minutesToTime(requestedEnd);
+    booking.courtNumber = courtNumber;
+    booking.price = price;
+
+    await booking.save();
+
+    res.json({ message: 'Booking modified successfully', booking });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Failed to modify booking' });
+  }
+});
+
+
+
+
+/** TO_DO TO DO
+ * create an endpoint to charge or refund the money for the booking modification and cancellation
+ */
+
 
 
 module.exports = router;
