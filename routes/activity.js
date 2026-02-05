@@ -2,7 +2,56 @@ const express = require('express');
 const router = express.Router();
 const Activity = require('../models/Activity');
 
-// Host an activity
+// Create Activity with extended fields
+router.post('/createActivity', async (req, res) => {
+  try {
+    const {
+      hostEmail,
+      city,
+      location,
+      sport,
+      academy,
+      address,
+      date,
+      fromTime,
+      toTime,
+      courtNumber,
+      skillLevel,
+      maxPlayers,
+      pricePerParticipant
+    } = req.body;
+
+    if (!hostEmail || !sport || !date || !fromTime || !toTime || !maxPlayers) {
+      return res.status(400).json({ message: 'Missing required fields' });
+    }
+
+    const newActivity = await Activity.create({
+      hostEmail,
+      city,
+      location,
+      sport,
+      academy,
+      address,
+      date,
+      fromTime,
+      toTime,
+      courtNumber,
+      skillLevel,
+      maxPlayers,
+      pricePerParticipant: pricePerParticipant || 0,
+      joinedPlayers: [hostEmail],
+      pendingRequests: []
+    });
+
+    res.json({ success: true, message: 'Activity created successfully', activity: newActivity });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, message: 'Failed to create activity' });
+  }
+});
+
+// ------------------------ Existing Routes ------------------------ //
+// Host an activity (optional, could keep for backward compatibility)
 router.post('/host', async (req, res) => {
   const { hostEmail, city, fromTime, toTime, date, maxPlayers } = req.body;
   const newActivity = await Activity.create({
@@ -72,30 +121,30 @@ router.post('/respond', async (req, res) => {
   res.json({ message: `User ${action}ed` });
 });
 
-
+// Retire a player
 router.post('/retire-player', async (req, res) => {
   const { activityId, userEmail } = req.body;
-
   const activity = await Activity.findById(activityId);
   activity.joinedPlayers = activity.joinedPlayers.filter(p => p !== userEmail);
-
-  // Optional: also remove from pendingRequests in case somehow still present
   activity.pendingRequests = activity.pendingRequests.filter(p => p !== userEmail);
   await activity.save();
 
   res.json({ message: 'Player retired from activity' });
 });
 
+// Cancel activity
 router.delete('/cancel/:id', async (req, res) => {
   await Activity.findByIdAndDelete(req.params.id);
   res.json({ message: 'Activity cancelled' });
 });
 
+// Get my pending requests
 router.get('/my-requests/:email', async (req, res) => {
   const activities = await Activity.find({ pendingRequests: req.params.email });
   res.json(activities);
 });
 
+// Cancel request
 router.post('/cancel-request', async (req, res) => {
   const { activityId, userEmail } = req.body;
   const activity = await Activity.findById(activityId);
@@ -107,6 +156,7 @@ router.post('/cancel-request', async (req, res) => {
   res.json({ message: 'Request cancelled' });
 });
 
+// Get my activities
 router.get('/my-activities/:email', async (req, res) => {
   const today = new Date().toISOString().split('T')[0];
   const activities = await Activity.find({
@@ -116,12 +166,12 @@ router.get('/my-activities/:email', async (req, res) => {
   res.json(activities);
 });
 
+// Retire self from activity
 router.post('/retire-self', async (req, res) => {
   const { activityId, userEmail } = req.body;
   const activity = await Activity.findById(activityId);
   if (!activity) return res.status(404).json({ message: 'Activity not found' });
 
-  // Combine date and fromTime into a Date object
   const activityStart = new Date(`${activity.date}T${activity.fromTime}`);
   const now = new Date();
 
@@ -134,11 +184,5 @@ router.post('/retire-self', async (req, res) => {
 
   res.json({ message: 'You have been retired from this activity' });
 });
-
-
-
-
-
-
 
 module.exports = router;

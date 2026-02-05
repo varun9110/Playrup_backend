@@ -8,10 +8,10 @@ const Academy = require('../models/Academy');
 const User = require('../models/User');
 const { capitalizeWords } = require('../utils/helperFunctions');
 
-// POST /admin/onboard-academy
+// POST /academy/onboard-academy
 /**
  * @swagger
- * /admin/onboard-academy:
+ * /academy/onboard-academy:
  *   post:
  *     summary: Onboard a new academy
  *     tags: [Academy]
@@ -123,10 +123,10 @@ router.post('/onboard-academy', async (req, res) => {
   }
 });
 
-// POST /admin/configure
+// POST /academy/configure
 /**
  * @swagger
- * /admin/configure:
+ * /academy/configure:
  *   post:
  *     summary: Configure sports and courts for an academy
  *     tags: [Academy]
@@ -207,10 +207,10 @@ router.post('/configure', async (req, res) => {
   }
 });
 
-// GET /admin/getDetails
+// GET /academy/getDetails
 /**
  * @swagger
- * /admin/getDetails:
+ * /academy/getDetails:
  *   get:
  *     summary: Get academy details
  *     tags: [Academy]
@@ -241,10 +241,10 @@ router.get("/getDetails", async (req, res) => {
   }
 });
 
-// GET /admin/locations
+// GET /academy/locations
 /**
  * @swagger
- * /admin/locations:
+ * /academy/locations:
  *   get:
  *     summary: Get unique cities and addresses of academies
  *     tags: [Academy]
@@ -282,10 +282,10 @@ router.get("/locations", async (req, res) => {
   }
 });
 
-// GET /admin/sports/:city
+// GET /academy/sports/:city
 /**
  * @swagger
- * /admin/sports/{city}:
+ * /academy/sports/{city}:
  *   get:
  *     summary: Get unique sports available in a city
  *     tags: [Academy]
@@ -325,5 +325,146 @@ router.get("/sports/:city", async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 });
+
+// GET /academy/getAcademies
+/**
+ * @swagger
+ * /academy/getAcademies:
+ *   get:
+ *     summary: Get academies by city and sport
+ *     tags: [Academy]
+ *     parameters:
+ *       - in: query
+ *         name: city
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: City name
+ *       - in: query
+ *         name: sport
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Sport name
+ *     responses:
+ *       200:
+ *         description: List of academies offering the sport
+ *       400:
+ *         description: Missing parameters
+ *       404:
+ *         description: No academies found
+ *       500:
+ *         description: Server error
+ */
+router.get("/getAcademies", async (req, res) => {
+  try {
+    const { city, sport } = req.query;
+
+    if (!city || !sport) {
+      return res.status(400).json({
+        message: "City and sport are required",
+        success: false
+      });
+    }
+
+    const academies = await Academy.find({
+      city: city.toLowerCase(),
+      "sports.sportName": sport
+    }).select("name email phone address city sports");
+
+    if (!academies.length) {
+      return res.status(404).json({
+        message: "No academies found for this sport and city",
+        success: false
+      });
+    }
+
+    res.status(200).json({
+      academies,
+      success: true
+    });
+  } catch (err) {
+    console.error("Error fetching academies:", err);
+    res.status(500).json({
+      message: "Server error",
+      success: false
+    });
+  }
+});
+
+// GET /academy/getCourts
+/**
+ * @swagger
+ * /academy/getCourts:
+ *   get:
+ *     summary: Get courts and pricing for a specific sport in an academy
+ *     tags: [Academy]
+ *     parameters:
+ *       - in: query
+ *         name: email
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: email
+ *         description: Academy's registered email
+ *       - in: query
+ *         name: sport
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Sport name
+ *     responses:
+ *       200:
+ *         description: List of courts and pricing
+ *       400:
+ *         description: Missing parameters
+ *       404:
+ *         description: Academy or sport not found
+ *       500:
+ *         description: Server error
+ */
+router.get("/getCourts", async (req, res) => {
+  try {
+    const { email, sport } = req.query;
+
+    if (!email || !sport) {
+      return res.status(400).json({
+        message: "Academy email and sport name are required",
+        success: false
+      });
+    }
+
+    const academy = await Academy.findOne({ email: email.toLowerCase() });
+    if (!academy) {
+      return res.status(404).json({
+        message: "Academy not found",
+        success: false
+      });
+    }
+
+    const sportData = academy.sports.find(s => s.sportName.toLowerCase() === sport.toLowerCase());
+    if (!sportData) {
+      return res.status(404).json({
+        message: `Sport "${sport}" not found in this academy`,
+        success: false
+      });
+    }
+
+    res.status(200).json({
+      academy: academy.name,
+      sport: sportData.sportName,
+      courts: sportData.pricing, // contains courtNumber and prices array
+      success: true
+    });
+  } catch (err) {
+    console.error("Error fetching courts:", err);
+    res.status(500).json({
+      message: "Server error",
+      success: false
+    });
+  }
+});
+
+
 
 module.exports = router;

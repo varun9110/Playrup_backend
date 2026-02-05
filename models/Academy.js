@@ -22,5 +22,9 @@ const academySchema = new mongoose.Schema({
   sports: [sportSchema]
 });
 
+
+academySchema.index({ city: 1, "sports.sportName": 1 });
+
+
 module.exports = mongoose.model('Academy', academySchema);
 
