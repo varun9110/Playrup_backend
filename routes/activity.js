@@ -1,6 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const Activity = require('../models/Activity');
+const Request = require('../models/Request');
+
 
 // Create Activity with extended fields
 router.post('/createActivity', async (req, res) => {
@@ -50,139 +52,139 @@ router.post('/createActivity', async (req, res) => {
   }
 });
 
-// ------------------------ Existing Routes ------------------------ //
-// Host an activity (optional, could keep for backward compatibility)
-router.post('/host', async (req, res) => {
-  const { hostEmail, city, fromTime, toTime, date, maxPlayers } = req.body;
-  const newActivity = await Activity.create({
-    hostEmail, city, fromTime, toTime, date, maxPlayers,
-    joinedPlayers: [hostEmail],
-    pendingRequests: []
-  });
-  res.json(newActivity);
-});
 
-// Get all activities (exclude past and full)
-router.get('/all', async (req, res) => {
+// Update Activity
+router.put('/updateActivity/:activityId', async (req, res) => {
   try {
-    const { email } = req.query;
-    const today = new Date().toISOString().split('T')[0];
+    const { activityId } = req.params;
+    const updateData = {};
 
-    const allActivities = await Activity.find({
-      date: { $gte: today }
+    // List of allowed fields to update
+    const allowedFields = [
+      'city',
+      'location',
+      'sport',
+      'academy',
+      'address',
+      'date',
+      'fromTime',
+      'toTime',
+      'courtNumber',
+      'skillLevel',
+      'maxPlayers',
+      'pricePerParticipant'
+    ];
+
+    // Only include fields that are present in req.body
+    allowedFields.forEach(field => {
+      if (req.body[field] !== undefined) {
+        updateData[field] = req.body[field];
+      }
     });
 
-    const filtered = allActivities.filter(act =>
-      act.hostEmail !== email &&
-      !act.joinedPlayers.includes(email) &&
-      !act.pendingRequests.includes(email) &&
-      act.joinedPlayers.length < act.maxPlayers
-    );
+    const activity = await Activity.findById(activityId);
+    if (!activity) {
+      return res.status(404).json({ success: false, message: 'Activity not found' });
+    }
 
-    res.json(filtered);
+    // Update fields
+    Object.assign(activity, updateData);
+    await activity.save();
+
+    res.json({ success: true, message: 'Activity updated successfully', activity });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, message: 'Failed to update activity' });
+  }
+});
+
+
+
+// Get all future Active activities
+router.get('/allActivities', async (req, res) => {
+  try {
+    const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+
+    const activities = await Activity.find({
+      date: { $gte: today },
+      status: 'Active'
+    }).sort({ date: 1, fromTime: 1 }); // optional but recommended
+
+    res.json(activities);
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Server error' });
   }
 });
 
-// Request to join activity
-router.post('/request', async (req, res) => {
-  const { activityId, userEmail } = req.body;
-  const activity = await Activity.findById(activityId);
-  if (!activity.pendingRequests.includes(userEmail) &&
-    !activity.joinedPlayers.includes(userEmail)) {
+
+// Soft delete / cancel user's activity
+router.post('/cancelActivity', async (req, res) => {
+  try {
+    const { activityId, hostEmail } = req.body;
+
+    // Find the activity by ID and host email
+    const activity = await Activity.findOne({ _id: activityId, hostEmail });
+
+    if (!activity) {
+      return res.status(404).json({ message: 'Activity not found or you are not the host' });
+    }
+
+    if (activity.status === 'Cancelled') {
+      return res.status(400).json({ message: 'Activity is already cancelled' });
+    }
+
+    // Soft delete
+    activity.status = 'Cancelled';
+    await activity.save();
+
+    res.json({ message: 'Activity cancelled successfully', activity });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+
+// Request to join an activity
+router.post('/requestJoin', async (req, res) => {
+  try {
+    const { activityId, userEmail } = req.body;
+
+    if (!activityId || !userEmail) {
+      return res.status(400).json({ message: 'Missing required fields' });
+    }
+
+    const activity = await Activity.findById(activityId);
+    if (!activity || activity.status !== 'Active') {
+      return res.status(404).json({ message: 'Activity not found or not active' });
+    }
+
+    if (activity.joinedPlayers.includes(userEmail)) {
+      return res.status(400).json({ message: 'You are already part of this activity' });
+    }
+
+    if (activity.pendingRequests.includes(userEmail)) {
+      return res.status(400).json({ message: 'You have already requested to join' });
+    }
+
+    // Add user to pending requests in Activity
     activity.pendingRequests.push(userEmail);
     await activity.save();
+
+    // Create a new request in Request for history
+    const newRequest = await Request.create({
+      activityId,
+      userEmail,
+      status: 'Pending'
+    });
+
+    res.json({ message: 'Join request sent successfully', request: newRequest });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
   }
-  res.json({ message: 'Request sent' });
 });
 
-// Get host’s hosted activities
-router.get('/hosted/:email', async (req, res) => {
-  const activities = await Activity.find({ hostEmail: req.params.email });
-  res.json(activities);
-});
-
-// Approve or reject request
-router.post('/respond', async (req, res) => {
-  const { activityId, userEmail, action } = req.body;
-  const activity = await Activity.findById(activityId);
-
-  if (action === 'approve') {
-    if (!activity.joinedPlayers.includes(userEmail) &&
-      activity.joinedPlayers.length < activity.maxPlayers) {
-      activity.joinedPlayers.push(userEmail);
-    }
-  }
-  activity.pendingRequests = activity.pendingRequests.filter(e => e !== userEmail);
-  await activity.save();
-
-  res.json({ message: `User ${action}ed` });
-});
-
-// Retire a player
-router.post('/retire-player', async (req, res) => {
-  const { activityId, userEmail } = req.body;
-  const activity = await Activity.findById(activityId);
-  activity.joinedPlayers = activity.joinedPlayers.filter(p => p !== userEmail);
-  activity.pendingRequests = activity.pendingRequests.filter(p => p !== userEmail);
-  await activity.save();
-
-  res.json({ message: 'Player retired from activity' });
-});
-
-// Cancel activity
-router.delete('/cancel/:id', async (req, res) => {
-  await Activity.findByIdAndDelete(req.params.id);
-  res.json({ message: 'Activity cancelled' });
-});
-
-// Get my pending requests
-router.get('/my-requests/:email', async (req, res) => {
-  const activities = await Activity.find({ pendingRequests: req.params.email });
-  res.json(activities);
-});
-
-// Cancel request
-router.post('/cancel-request', async (req, res) => {
-  const { activityId, userEmail } = req.body;
-  const activity = await Activity.findById(activityId);
-  if (!activity) return res.status(404).json({ message: 'Activity not found' });
-
-  activity.pendingRequests = activity.pendingRequests.filter(p => p !== userEmail);
-  await activity.save();
-
-  res.json({ message: 'Request cancelled' });
-});
-
-// Get my activities
-router.get('/my-activities/:email', async (req, res) => {
-  const today = new Date().toISOString().split('T')[0];
-  const activities = await Activity.find({
-    joinedPlayers: req.params.email,
-    date: { $gte: today }
-  });
-  res.json(activities);
-});
-
-// Retire self from activity
-router.post('/retire-self', async (req, res) => {
-  const { activityId, userEmail } = req.body;
-  const activity = await Activity.findById(activityId);
-  if (!activity) return res.status(404).json({ message: 'Activity not found' });
-
-  const activityStart = new Date(`${activity.date}T${activity.fromTime}`);
-  const now = new Date();
-
-  if (now >= activityStart) {
-    return res.status(400).json({ message: 'Cannot retire after activity start time' });
-  }
-
-  activity.joinedPlayers = activity.joinedPlayers.filter(p => p !== userEmail);
-  await activity.save();
-
-  res.json({ message: 'You have been retired from this activity' });
-});
 
 module.exports = router;

@@ -8,7 +8,6 @@ const userSchema = new mongoose.Schema({
   role: { type: String, enum: ['user', 'superadmin', 'academy'], default: 'user' },
   otp: String,
   otpExpiry: Date,
-});
-
+}, { timestamps: true });
 
 module.exports = mongoose.model('User', userSchema);
