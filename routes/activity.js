@@ -52,54 +52,6 @@ router.post('/createActivity', async (req, res) => {
   }
 });
 
-
-// Update Activity
-router.put('/updateActivity/:activityId', async (req, res) => {
-  try {
-    const { activityId } = req.params;
-    const updateData = {};
-
-    // List of allowed fields to update
-    const allowedFields = [
-      'city',
-      'location',
-      'sport',
-      'academy',
-      'address',
-      'date',
-      'fromTime',
-      'toTime',
-      'courtNumber',
-      'skillLevel',
-      'maxPlayers',
-      'pricePerParticipant'
-    ];
-
-    // Only include fields that are present in req.body
-    allowedFields.forEach(field => {
-      if (req.body[field] !== undefined) {
-        updateData[field] = req.body[field];
-      }
-    });
-
-    const activity = await Activity.findById(activityId);
-    if (!activity) {
-      return res.status(404).json({ success: false, message: 'Activity not found' });
-    }
-
-    // Update fields
-    Object.assign(activity, updateData);
-    await activity.save();
-
-    res.json({ success: true, message: 'Activity updated successfully', activity });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ success: false, message: 'Failed to update activity' });
-  }
-});
-
-
-
 // Get all future Active activities
 router.get('/allActivities', async (req, res) => {
   try {
@@ -116,6 +68,7 @@ router.get('/allActivities', async (req, res) => {
     res.status(500).json({ message: 'Server error' });
   }
 });
+
 
 
 // Soft delete / cancel user's activity
@@ -183,6 +136,95 @@ router.post('/requestJoin', async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Server error' });
+  }
+});
+
+
+// POST endpoint to get user activities
+router.post('/userActivities', async (req, res) => {
+  try {
+    const { userEmail } = req.body;
+
+    if (!userEmail) {
+      return res.status(400).json({ message: 'User email is required in the body' });
+    }
+
+    // Fetch all activities where the user is in joinedPlayers
+    const activities = await Activity.find({ joinedPlayers: userEmail }).sort({ date: 1, fromTime: 1 });
+
+    res.status(200).json({ activities });
+  } catch (error) {
+    console.error('Error fetching user activities:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// Fetch activity by ID
+router.get('/:activityId', async (req, res) => {
+  try {
+    const { activityId } = req.params;
+
+    const activity = await Activity.findById(activityId);
+
+    if (!activity) {
+      return res.status(404).json({
+        message: 'Activity not found'
+      });
+    }
+
+    res.status(200).json({activity});
+  } catch (error) {
+    console.error('Error fetching activity:', error);
+
+    res.status(500).json({
+      message: 'Failed to fetch activity',
+      error: error.message
+    });
+  }
+});
+
+// Update Activity
+router.put('/updateActivity/:activityId', async (req, res) => {
+  try {
+    const { activityId } = req.params;
+    const updateData = {};
+
+    // List of allowed fields to update
+    const allowedFields = [
+      'city',
+      'location',
+      'sport',
+      'academy',
+      'address',
+      'date',
+      'fromTime',
+      'toTime',
+      'courtNumber',
+      'skillLevel',
+      'maxPlayers',
+      'pricePerParticipant'
+    ];
+
+    // Only include fields that are present in req.body
+    allowedFields.forEach(field => {
+      if (req.body[field] !== undefined) {
+        updateData[field] = req.body[field];
+      }
+    });
+
+    const activity = await Activity.findById(activityId);
+    if (!activity) {
+      return res.status(404).json({ success: false, message: 'Activity not found' });
+    }
+
+    // Update fields
+    Object.assign(activity, updateData);
+    await activity.save();
+
+    res.json({ success: true, message: 'Activity updated successfully', activity });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, message: 'Failed to update activity' });
   }
 });
 
