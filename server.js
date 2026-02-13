@@ -19,6 +19,9 @@ app.use('/api/booking', bookingRoutes);
 const activityRoutes = require('./routes/activity');
 app.use('/api/activity', activityRoutes);
 
+const requestRoutes = require('./routes/request');
+app.use('/api/request', requestRoutes);
+
 const setupSwagger = require('./swagger');
 setupSwagger(app);
 
