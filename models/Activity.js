@@ -2,9 +2,11 @@ const mongoose = require('mongoose');
 
 const activitySchema = new mongoose.Schema({
   hostEmail: { type: String, required: true },
+  hostId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   city: { type: String },
   location: { type: String },
   sport: { type: String, required: true },
+  academyId: { type: mongoose.Schema.Types.ObjectId, ref: 'Academy' },
   academy: { type: String },
   address: { type: String },
   date: { type: String, required: true }, // YYYY-MM-DD
@@ -14,8 +16,8 @@ const activitySchema = new mongoose.Schema({
   skillLevel: { type: String },
   maxPlayers: { type: Number, required: true },
   pricePerParticipant: { type: Number, default: 0 },
-  joinedPlayers: { type: [String], default: [] },
-  pendingRequests: { type: [String], default: [] },
+  joinedPlayers: {type: [mongoose.Schema.Types.ObjectId], ref: 'User', required: true, default: [] },
+  pendingRequests: { type: [mongoose.Schema.Types.ObjectId], ref: 'User', required: true, default: [] },
   status: { type: String, default: 'Active' }
 }, { timestamps: true });
 

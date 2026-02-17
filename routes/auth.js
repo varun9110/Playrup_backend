@@ -197,14 +197,8 @@ router.post('/login', async (req, res) => {
   if (!isMatch) return res.status(400).json({ message: 'Invalid credentials' });
 
   const token = jwt.sign({ id: user._id, email: user.email }, JWT_SECRET, { expiresIn: '1d' });
-
   const userObject = user.toObject();
-
-  console.log("Full user object from database:", userObject);
-
   const {password: ___, otp: ____, otpExpiry: _____, _id:______, ...userWithoutSensitiveInfo} = userObject;
-
-  console.log("User object before sending response:", userWithoutSensitiveInfo);
 
   res.json({
     ...userWithoutSensitiveInfo,

@@ -1,13 +1,23 @@
 const crypto = require('crypto');
 
 const ALGORITHM = 'aes-256-gcm';
+
 const SECRET_KEY = crypto
   .createHash('sha256')
   .update(process.env.ENCRYPTION_SECRET)
   .digest(); // 32 bytes
 
+function deriveIV(text) {
+  // Deterministic IV derived from content
+  return crypto
+    .createHmac('sha256', SECRET_KEY)
+    .update(text)
+    .digest()
+    .subarray(0, 12); // 12 bytes for GCM
+}
+
 function encrypt(text) {
-  const iv = crypto.randomBytes(12); // GCM recommended IV size
+  const iv = deriveIV(text);
   const cipher = crypto.createCipheriv(ALGORITHM, SECRET_KEY, iv);
 
   let encrypted = cipher.update(text, 'utf8', 'hex');
@@ -22,6 +32,7 @@ function encrypt(text) {
   };
 }
 
+
 function decrypt(encryptedData) {
   const { iv, content, tag } = encryptedData;
 
@@ -31,7 +42,7 @@ function decrypt(encryptedData) {
     Buffer.from(iv, 'hex')
   );
 
-  // IMPORTANT: set auth tag before final()
+  // Required for GCM authentication
   decipher.setAuthTag(Buffer.from(tag, 'hex'));
 
   let decrypted = decipher.update(content, 'hex', 'utf8');
@@ -39,6 +50,7 @@ function decrypt(encryptedData) {
 
   return decrypted;
 }
+
 
 
 function capitalizeWords(str) {

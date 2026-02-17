@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const Activity = require('../models/Activity');
 const Request = require('../models/Request');
+const { encrypt, decrypt } = require('../utils/helperFunctions');
 
 
 // Create Activity with extended fields
@@ -9,9 +10,11 @@ router.post('/createActivity', async (req, res) => {
   try {
     const {
       hostEmail,
+      hostId,
       city,
       location,
       sport,
+      academyId,
       academy,
       address,
       date,
@@ -23,15 +26,20 @@ router.post('/createActivity', async (req, res) => {
       pricePerParticipant
     } = req.body;
 
-    if (!hostEmail || !sport || !date || !fromTime || !toTime || !maxPlayers) {
+    const userEmailDecrypted = decrypt(hostEmail);
+    const userIdDecrypted = decrypt(hostId);
+
+    if (!hostEmail || !hostId || !sport || !date || !fromTime || !toTime || !maxPlayers) {
       return res.status(400).json({ message: 'Missing required fields' });
     }
 
     const newActivity = await Activity.create({
-      hostEmail,
+      hostEmail: userEmailDecrypted,
+      hostId: userIdDecrypted,
       city,
       location,
       sport,
+      academyId,
       academy,
       address,
       date,
@@ -41,7 +49,7 @@ router.post('/createActivity', async (req, res) => {
       skillLevel,
       maxPlayers,
       pricePerParticipant: pricePerParticipant || 0,
-      joinedPlayers: [hostEmail],
+      joinedPlayers: [userIdDecrypted],
       pendingRequests: []
     });
 
@@ -55,14 +63,47 @@ router.post('/createActivity', async (req, res) => {
 // Get all future Active activities
 router.get('/allActivities', async (req, res) => {
   try {
-    const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+    const today = new Date().toISOString().split('T')[0];
 
     const activities = await Activity.find({
       date: { $gte: today },
       status: 'Active'
-    }).sort({ date: 1, fromTime: 1 }); // optional but recommended
+    })
+      .populate({
+        path: 'hostId',
+        select: 'email name phone role isVerified createdAt' // only send what you need
+      })
+      .sort({ date: 1, fromTime: 1 });
 
-    res.json(activities);
+    const activitiesWithEncryptedData = activities.map(activity => {
+      const activityObj = activity.toObject();
+      const { hostEmail, hostId, ...rest } = activityObj;
+
+      return {
+        ...rest,
+        // Encrypt activity-level sensitive fields
+        joinedPlayers: activityObj.joinedPlayers.map(id =>
+          encrypt(id.toString())
+        ),
+        pendingRequests: activityObj.pendingRequests.map(id =>
+          encrypt(id.toString())
+        ),
+
+        // 🔥 Send Host Details
+        host: {
+          id: encrypt(activityObj.hostId._id.toString()),
+          email: encrypt(activityObj.hostId.email),
+          phone: encrypt(activityObj.hostId.phone),
+          role: activityObj.hostId.role,
+          isVerified: activityObj.hostId.isVerified,
+          joinedOn: activityObj.hostId.createdAt,
+          name: activityObj.hostId.name
+        }
+      };
+    });
+
+    res.json(activitiesWithEncryptedData);
+
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Server error' });
@@ -71,13 +112,20 @@ router.get('/allActivities', async (req, res) => {
 
 
 
+
 // Soft delete / cancel user's activity
 router.post('/cancelActivity', async (req, res) => {
   try {
-    const { activityId, hostEmail } = req.body;
+    const { activityId, hostEmail, hostId } = req.body;
+
+    const userEmailDecrypted = decrypt(hostEmail);
+    const userIdDecrypted = decrypt(hostId);
 
     // Find the activity by ID and host email
-    const activity = await Activity.findOne({ _id: activityId, hostEmail });
+    const activity = await Activity.findOne({ _id: activityId, hostEmail: userEmailDecrypted, hostId: userIdDecrypted }).populate({
+      path: 'hostId',
+      select: 'email name phone role isVerified createdAt' // only send what you need
+    });
 
     if (!activity) {
       return res.status(404).json({ message: 'Activity not found or you are not the host' });
@@ -91,7 +139,34 @@ router.post('/cancelActivity', async (req, res) => {
     activity.status = 'Cancelled';
     await activity.save();
 
-    res.json({ message: 'Activity cancelled successfully', activity });
+    const activityObj = activity.toObject();
+    const { hostEmail: _, hostId: __, ...cleanedActivity } = activityObj;
+
+    const cleanedActivityWithEncryptedFields = {
+      ...cleanedActivity,
+      // Encrypt activity-level sensitive fields
+      joinedPlayers: activityObj.joinedPlayers.map(id =>
+        encrypt(id.toString())
+      ),
+      pendingRequests: activityObj.pendingRequests.map(id =>
+        encrypt(id.toString())
+      ),
+
+      // 🔥 Send Host Details
+      host: {
+        id: encrypt(activityObj.hostId._id.toString()),
+        email: encrypt(activityObj.hostId.email),
+        phone: encrypt(activityObj.hostId.phone),
+        role: activityObj.hostId.role,
+        isVerified: activityObj.hostId.isVerified,
+        joinedOn: activityObj.hostId.createdAt,
+        name: activityObj.hostId.name
+      }
+    };
+
+
+
+    res.json({ message: 'Activity cancelled successfully', activity: cleanedActivityWithEncryptedFields });
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Server error' });
@@ -102,9 +177,12 @@ router.post('/cancelActivity', async (req, res) => {
 // Request to join an activity
 router.post('/requestJoin', async (req, res) => {
   try {
-    const { activityId, userEmail } = req.body;
+    const { activityId, userEmail, userId } = req.body;
 
-    if (!activityId || !userEmail) {
+    const userEmailDecrypted = decrypt(userEmail);
+    const userIdDecrypted = decrypt(userId);
+
+    if (!activityId || !userEmailDecrypted || !userIdDecrypted) {
       return res.status(400).json({ message: 'Missing required fields' });
     }
 
@@ -113,26 +191,34 @@ router.post('/requestJoin', async (req, res) => {
       return res.status(404).json({ message: 'Activity not found or not active' });
     }
 
-    if (activity.joinedPlayers.includes(userEmail)) {
+
+    if (activity.joinedPlayers.includes(userIdDecrypted)) {
       return res.status(400).json({ message: 'You are already part of this activity' });
     }
 
-    if (activity.pendingRequests.includes(userEmail)) {
+    if (activity.pendingRequests.includes(userIdDecrypted)) {
       return res.status(400).json({ message: 'You have already requested to join' });
     }
 
     // Add user to pending requests in Activity
-    activity.pendingRequests.push(userEmail);
+    activity.pendingRequests.push(userIdDecrypted);
     await activity.save();
 
     // Create a new request in Request for history
     const newRequest = await Request.create({
       activityId,
-      userEmail,
+      userEmail: userEmailDecrypted,
+      userId: userIdDecrypted,
       status: 'Pending'
     });
 
-    res.json({ message: 'Join request sent successfully', request: newRequest });
+    const newRequestPayload = {
+      ...newRequest._doc,
+      userEmail: encrypt(newRequest.userEmail.toString()),
+      userId: encrypt(newRequest.userId.toString())
+    };
+
+    res.json({ message: 'Join request sent successfully', request: newRequestPayload });
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Server error' });
@@ -143,16 +229,51 @@ router.post('/requestJoin', async (req, res) => {
 // POST endpoint to get user activities
 router.post('/userActivities', async (req, res) => {
   try {
-    const { userEmail } = req.body;
+    const { userEmail, userId } = req.body;
 
-    if (!userEmail) {
-      return res.status(400).json({ message: 'User email is required in the body' });
+    const userEmailDecrypted = decrypt(userEmail);
+    const userIdDecrypted = decrypt(userId);
+
+    if (!userEmailDecrypted || !userIdDecrypted) {
+      return res.status(400).json({ message: 'User email and userId are required in the body' });
     }
 
     // Fetch all activities where the user is in joinedPlayers
-    const activities = await Activity.find({ joinedPlayers: userEmail }).sort({ date: 1, fromTime: 1 });
+    const activities = await Activity.find({ joinedPlayers: userIdDecrypted })
+    .populate({
+      path: 'hostId',
+      select: 'email name phone role isVerified createdAt' // only send what you need
+    })
+    .sort({ date: 1, fromTime: 1 });
 
-    res.status(200).json({ activities });
+    const activitiesWithEncryptedData = activities.map(activity => {
+      const activityObj = activity.toObject();
+      const { hostEmail, hostId, ...rest } = activityObj;
+
+      return {
+        ...rest,
+        // Encrypt activity-level sensitive fields
+        joinedPlayers: activityObj.joinedPlayers.map(id =>
+          encrypt(id.toString())
+        ),
+        pendingRequests: activityObj.pendingRequests.map(id =>
+          encrypt(id.toString())
+        ),
+
+        // 🔥 Send Host Details
+        host: {
+          id: encrypt(activityObj.hostId._id.toString()),
+          email: encrypt(activityObj.hostId.email),
+          phone: encrypt(activityObj.hostId.phone),
+          role: activityObj.hostId.role,
+          isVerified: activityObj.hostId.isVerified,
+          joinedOn: activityObj.hostId.createdAt,
+          name: activityObj.hostId.name
+        }
+      };
+    });
+
+    res.status(200).json({ activitiesWithEncryptedData });
   } catch (error) {
     console.error('Error fetching user activities:', error);
     res.status(500).json({ message: 'Internal server error' });
@@ -160,73 +281,73 @@ router.post('/userActivities', async (req, res) => {
 });
 
 // Fetch activity by ID
-router.get('/:activityId', async (req, res) => {
-  try {
-    const { activityId } = req.params;
+// router.get('/:activityId', async (req, res) => {
+//   try {
+//     const { activityId } = req.params;
 
-    const activity = await Activity.findById(activityId);
+//     const activity = await Activity.findById(activityId);
 
-    if (!activity) {
-      return res.status(404).json({
-        message: 'Activity not found'
-      });
-    }
+//     if (!activity) {
+//       return res.status(404).json({
+//         message: 'Activity not found'
+//       });
+//     }
 
-    res.status(200).json({activity});
-  } catch (error) {
-    console.error('Error fetching activity:', error);
+//     res.status(200).json({ activity });
+//   } catch (error) {
+//     console.error('Error fetching activity:', error);
 
-    res.status(500).json({
-      message: 'Failed to fetch activity',
-      error: error.message
-    });
-  }
-});
+//     res.status(500).json({
+//       message: 'Failed to fetch activity',
+//       error: error.message
+//     });
+//   }
+// });
 
-// Update Activity
-router.put('/updateActivity/:activityId', async (req, res) => {
-  try {
-    const { activityId } = req.params;
-    const updateData = {};
+// // Update Activity
+// router.put('/updateActivity/:activityId', async (req, res) => {
+//   try {
+//     const { activityId } = req.params;
+//     const updateData = {};
 
-    // List of allowed fields to update
-    const allowedFields = [
-      'city',
-      'location',
-      'sport',
-      'academy',
-      'address',
-      'date',
-      'fromTime',
-      'toTime',
-      'courtNumber',
-      'skillLevel',
-      'maxPlayers',
-      'pricePerParticipant'
-    ];
+//     // List of allowed fields to update
+//     const allowedFields = [
+//       'city',
+//       'location',
+//       'sport',
+//       'academy',
+//       'address',
+//       'date',
+//       'fromTime',
+//       'toTime',
+//       'courtNumber',
+//       'skillLevel',
+//       'maxPlayers',
+//       'pricePerParticipant'
+//     ];
 
-    // Only include fields that are present in req.body
-    allowedFields.forEach(field => {
-      if (req.body[field] !== undefined) {
-        updateData[field] = req.body[field];
-      }
-    });
+//     // Only include fields that are present in req.body
+//     allowedFields.forEach(field => {
+//       if (req.body[field] !== undefined) {
+//         updateData[field] = req.body[field];
+//       }
+//     });
 
-    const activity = await Activity.findById(activityId);
-    if (!activity) {
-      return res.status(404).json({ success: false, message: 'Activity not found' });
-    }
+//     const activity = await Activity.findById(activityId);
+//     if (!activity) {
+//       return res.status(404).json({ success: false, message: 'Activity not found' });
+//     }
 
-    // Update fields
-    Object.assign(activity, updateData);
-    await activity.save();
+//     // Update fields
+//     Object.assign(activity, updateData);
+//     await activity.save();
 
-    res.json({ success: true, message: 'Activity updated successfully', activity });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ success: false, message: 'Failed to update activity' });
-  }
-});
+//     res.json({ success: true, message: 'Activity updated successfully', activity });
+//   } catch (error) {
+//     console.error(error);
+//     res.status(500).json({ success: false, message: 'Failed to update activity' });
+//   }
+// });
 
 
 module.exports = router;
