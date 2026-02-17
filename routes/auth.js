@@ -198,17 +198,20 @@ router.post('/login', async (req, res) => {
 
   const token = jwt.sign({ id: user._id, email: user.email }, JWT_SECRET, { expiresIn: '1d' });
 
-  const userId = encrypt(user._id.toString());
-  const userEmail = encrypt(user.email.toString());
-  const userPhone = encrypt(user.phone.toString());
+  const userObject = user.toObject();
 
+  console.log("Full user object from database:", userObject);
+
+  const {password: ___, otp: ____, otpExpiry: _____, _id:______, ...userWithoutSensitiveInfo} = userObject;
+
+  console.log("User object before sending response:", userWithoutSensitiveInfo);
 
   res.json({
+    ...userWithoutSensitiveInfo,
     token,
-    userId,
-    userEmail,
-    userPhone,
-    role: user.role
+    userId: encrypt(userObject._id.toString()),
+    email: encrypt(userObject.email.toString()),
+    phone: encrypt(userObject.phone.toString())
   });
 });
 
