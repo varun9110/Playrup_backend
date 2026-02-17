@@ -6,7 +6,7 @@ const nodemailer = require('nodemailer');
 
 const Academy = require('../models/Academy');
 const User = require('../models/User');
-const { capitalizeWords } = require('../utils/helperFunctions');
+const { capitalizeWords, decrypt } = require('../utils/helperFunctions');
 
 // POST /academy/onboard-academy
 /**
@@ -96,7 +96,7 @@ router.post('/onboard-academy', async (req, res) => {
 
               Best regards,
               PlayC`
-        };
+      };
     } else {
       mailOptions = {
         from: 'varun.goel.vg@gmail.com',
@@ -110,7 +110,7 @@ router.post('/onboard-academy', async (req, res) => {
 
               Best regards,
               PlayC`
-        };
+      };
     }
 
     console.log(mailOptions)
@@ -188,10 +188,13 @@ router.post('/onboard-academy', async (req, res) => {
  *         description: Server error
  */
 router.post('/configure', async (req, res) => {
-  const { email, sports } = req.body;
+  const { email, userId, sports } = req.body;
+
+  const userEmail = decrypt(email);
+  const userIdDecrypted = decrypt(userId);
 
   try {
-    const academy = await Academy.findOne({ email });
+    const academy = await Academy.findOne({ email: userEmail.toLowerCase() });
 
     if (!academy) {
       return res.json({ message: 'Academy could not be found' });
@@ -230,11 +233,18 @@ router.post('/configure', async (req, res) => {
  *       500:
  *         description: Server error
  */
-router.get("/getDetails", async (req, res) => {
-  const { email } = req.query;
+router.post("/getDetails", async (req, res) => {
+  const {
+    email, userId
+  } = req.body;
+
+  const userEmail = decrypt(email);
+  const userIdDecrypted = decrypt(userId);
+
+
   try {
-    const academy = await Academy.findOne({ email });
-    res.status(200).json({academy, success: true});
+    const academy = await Academy.findOne({ email: userEmail.toLowerCase() });
+    res.status(200).json({ academy, success: true });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Server Error" });

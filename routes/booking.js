@@ -7,7 +7,8 @@ const {
   timeToMinutes,
   calculatePrice,
   minutesToTime,
-  decrypt
+  decrypt,
+  encrypt
 } = require('../utils/helperFunctions');
 
 // CREATE BOOKING
@@ -163,13 +164,24 @@ router.post('/check-availability', async (req, res) => {
 // MY BOOKINGS
 router.post('/my-bookings', async (req, res) => {
   try {
-    const { userEmail } = req.body;
+    const { userEmail, userId } = req.body;
+
+    const userEmailDecrypted = decrypt(userEmail);
+    const userIdDecrypted = decrypt(userId);
 
     // Only fetch bookings that are still active (Confirmed)
-    const bookings = await Booking.find({ userEmail, status: 'Confirmed' })
+    const bookings = await Booking.find({ userEmail: userEmailDecrypted, userId: userIdDecrypted, status: 'Confirmed' })
       .populate('academyId', 'name address city');
 
-    res.json(bookings);
+    let response = bookings.map(b => ({
+      ...b._doc,
+      userEmail: encrypt(b.userEmail.toString()),  // Encrypt email before sending back
+      userId: encrypt(b.userId.toString())  // Encrypt userId before sending back
+    }));
+
+    console.log('My Bookings Response:', response); // Debug log
+
+    res.json(response);
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: 'Failed to retrieve bookings' });
@@ -179,9 +191,12 @@ router.post('/my-bookings', async (req, res) => {
 // Soft cancel booking by updating status
 router.post('/cancel-booking', async (req, res) => {
   try {
-    const { bookingId, userEmail } = req.body;
+    const { bookingId, userEmail, userId } = req.body;
 
-    const booking = await Booking.findOne({ _id: bookingId, userEmail, status: 'Confirmed' });
+    const userEmailDecrypted = decrypt(userEmail);
+    const userIdDecrypted = decrypt(userId);
+
+    const booking = await Booking.findOne({ _id: bookingId, userEmail: userEmailDecrypted, userId: userIdDecrypted, status: 'Confirmed' });
     if (!booking) {
       return res.status(404).json({ message: 'Booking not found or already cancelled' });
     }
@@ -189,7 +204,13 @@ router.post('/cancel-booking', async (req, res) => {
     booking.status = 'Cancelled';
     await booking.save();
 
-    res.json({ message: 'Booking cancelled successfully', booking });
+    const bookingResponse = {
+      ...booking._doc,
+      userEmail: encrypt(booking.userEmail.toString()),
+      userId: encrypt(booking.userId.toString())
+    };
+
+    res.json({ message: 'Booking cancelled successfully', booking: bookingResponse });
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: 'Failed to cancel booking' });
@@ -199,10 +220,13 @@ router.post('/cancel-booking', async (req, res) => {
 // MODIFY / RESCHEDULE BOOKING
 router.patch('/modify-booking', async (req, res) => {
   try {
-    const { bookingId, userEmail, academyId, sport, courtNumber, date, startTime, duration } = req.body;
+    const { bookingId, userEmail, userId, academyId, sport, courtNumber, date, startTime, duration } = req.body;
 
     // Find the booking to modify
-    const booking = await Booking.findOne({ _id: bookingId, userEmail, status: 'Confirmed' });
+    const userEmailDecrypted = decrypt(userEmail);
+    const userIdDecrypted = decrypt(userId);
+
+    const booking = await Booking.findOne({ _id: bookingId, userEmail: userEmailDecrypted, userId: userIdDecrypted, status: 'Confirmed' });
     if (!booking) {
       return res.status(404).json({ message: 'Booking not found or already cancelled' });
     }
@@ -258,7 +282,13 @@ router.patch('/modify-booking', async (req, res) => {
 
     await booking.save();
 
-    res.json({ message: 'Booking modified successfully', booking });
+    const bookingResponse = {
+      ...booking._doc,
+      userEmail: encrypt(booking.userEmail.toString()),
+      userId: encrypt(booking.userId.toString())
+    };
+
+    res.json({ message: 'Booking modified successfully', booking: bookingResponse });
 
   } catch (err) {
     console.error(err);
