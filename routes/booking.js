@@ -6,12 +6,13 @@ const {
   isTimeOverlap,
   timeToMinutes,
   calculatePrice,
-  minutesToTime
+  minutesToTime,
+  decrypt
 } = require('../utils/helperFunctions');
 
 // CREATE BOOKING
 router.post('/create', async (req, res) => {
-  const { userEmail, academyId, sport, courtNumber, date, startTime, duration } = req.body;
+  const { userEmail, userId, academyId, sport, courtNumber, date, startTime, duration } = req.body;
 
   try {
     const academy = await Academy.findById(academyId);
@@ -51,8 +52,12 @@ router.post('/create', async (req, res) => {
 
     const price = calculatePrice(courtPricing.prices, startTime, duration);
 
+    const userEmailDecrypted = decrypt(userEmail);
+    const userIdDecrypted = decrypt(userId);
+
     const newBooking = new Booking({
-      userEmail,
+      userEmail: userEmailDecrypted,
+      userId: userIdDecrypted,
       academyId,
       sport,
       courtNumber,

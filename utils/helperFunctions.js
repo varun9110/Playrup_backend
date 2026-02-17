@@ -1,6 +1,49 @@
+const crypto = require('crypto');
+
+const ALGORITHM = 'aes-256-gcm';
+const SECRET_KEY = crypto
+  .createHash('sha256')
+  .update(process.env.ENCRYPTION_SECRET)
+  .digest(); // 32 bytes
+
+function encrypt(text) {
+  const iv = crypto.randomBytes(12); // GCM recommended IV size
+  const cipher = crypto.createCipheriv(ALGORITHM, SECRET_KEY, iv);
+
+  let encrypted = cipher.update(text, 'utf8', 'hex');
+  encrypted += cipher.final('hex');
+
+  const authTag = cipher.getAuthTag().toString('hex');
+
+  return {
+    iv: iv.toString('hex'),
+    content: encrypted,
+    tag: authTag
+  };
+}
+
+function decrypt(encryptedData) {
+  const { iv, content, tag } = encryptedData;
+
+  const decipher = crypto.createDecipheriv(
+    ALGORITHM,
+    SECRET_KEY,
+    Buffer.from(iv, 'hex')
+  );
+
+  // IMPORTANT: set auth tag before final()
+  decipher.setAuthTag(Buffer.from(tag, 'hex'));
+
+  let decrypted = decipher.update(content, 'hex', 'utf8');
+  decrypted += decipher.final('utf8');
+
+  return decrypted;
+}
+
+
 function capitalizeWords(str) {
   // Split the string by spaces, hyphens, or underscores
-    const words = str.toLowerCase().split(/[ -_]+/);
+  const words = str.toLowerCase().split(/[ -_]+/);
 
   // Use map to iterate over each word and capitalize its first letter
   const capitalizedWords = words.map(word => {
@@ -57,4 +100,4 @@ function calculatePrice(pricesArray, startTime, duration) {
   return total;
 }
 
-module.exports = { capitalizeWords, isTimeOverlap, timeToMinutes, calculatePrice, minutesToTime };
+module.exports = { capitalizeWords, isTimeOverlap, timeToMinutes, calculatePrice, minutesToTime, encrypt, decrypt };

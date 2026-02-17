@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const User = require('../models/User');
 const { generateOTP, sendOTP } = require('../utils/otpSender');
+const { encrypt } = require('../utils/helperFunctions');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 
@@ -197,10 +198,16 @@ router.post('/login', async (req, res) => {
 
   const token = jwt.sign({ id: user._id, email: user.email }, JWT_SECRET, { expiresIn: '1d' });
 
+  const userId = encrypt(user._id.toString());
+  const userEmail = encrypt(user.email.toString());
+  const userPhone = encrypt(user.phone.toString());
+
+
   res.json({
     token,
-    email: user.email,
-    phone: user.phone,
+    userId,
+    userEmail,
+    userPhone,
     role: user.role
   });
 });
