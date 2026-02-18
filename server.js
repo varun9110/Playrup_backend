@@ -22,6 +22,9 @@ app.use('/api/activity', activityRoutes);
 const requestRoutes = require('./routes/request');
 app.use('/api/request', requestRoutes);
 
+const dashboardRoutes = require('./routes/dashboard');
+app.use('/api/dashboard', dashboardRoutes);
+
 const setupSwagger = require('./swagger');
 setupSwagger(app);
 

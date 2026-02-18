@@ -49,7 +49,9 @@ router.post('/create', async (req, res) => {
     }
 
     const courtPricing = sportData.pricing.find(p => p.courtNumber === courtNumber);
-    if (!courtPricing) return res.status(404).json({ message: 'Court pricing not found' });
+    if (!courtPricing) {
+      return res.status(404).json({ message: 'Court pricing not found' });
+    }
 
     const price = calculatePrice(courtPricing.prices, startTime, duration);
 
@@ -70,7 +72,12 @@ router.post('/create', async (req, res) => {
     });
 
     await newBooking.save();
-    res.json({ message: 'Booking successful', booking: newBooking });
+
+    res.json({
+      message: 'Booking successful',
+      booking: newBooking
+    });
+
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: 'Booking failed' });
