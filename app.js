@@ -9,6 +9,7 @@ const activityRoutes = require('./routes/activity');
 const bookingRoutes = require('./routes/booking');
 const requestRoutes = require('./routes/request');
 const dashboardRoutes = require('./routes/dashboard');
+const userRoutes = require('./routes/user');
 
 
 const app = express();
@@ -22,6 +23,7 @@ app.use('/api/booking', bookingRoutes);
 app.use('/api/activity', activityRoutes);
 app.use('/api/request', requestRoutes);
 app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/user', userRoutes);
 
 const mongoURI = process.env.MONGO_URI || 'mongodb://localhost:27017/otp-login-system';
 
