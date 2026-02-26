@@ -1,4 +1,5 @@
 const express = require('express');
+const mongoose = require('mongoose');
 const router = express.Router();
 const Booking = require('../models/Booking');
 const Academy = require('../models/Academy');
@@ -302,6 +303,49 @@ router.patch('/modify-booking', async (req, res) => {
     res.status(500).json({ message: 'Failed to modify booking' });
   }
 });
+
+// POST /api/bookings/academy
+router.post('/academy-bookings', async (req, res) => {
+  try {
+    const { academyId, startDate, endDate, sport } = req.body;
+
+    if (!academyId || !startDate) {
+      return res.status(400).json({ message: 'academyId and startDate are required' });
+    }
+
+    // Build the date filter
+    let dateFilter = {};
+    if (endDate) {
+      // If endDate is provided, filter bookings between startDate and endDate
+      dateFilter = {
+        date: {
+          $gte: startDate,
+          $lte: endDate
+        }
+      };
+    } else {
+      // If only startDate is provided, filter bookings for that specific date
+      dateFilter = {
+        date: startDate
+      };
+    }
+
+    const bookings = await Booking.find({
+      academyId,
+      sport,
+      status: 'Confirmed',
+      ...dateFilter
+    }).populate('userId', 'name email phone') // optional: populate user info
+      .sort({ startTime: 1 }); // sort by start time
+
+    res.status(200).json({ success: true, bookings });
+  } catch (error) {
+    console.error('Error fetching bookings:', error);
+    res.status(500).json({ success: false, message: 'Server Error', error: error.message });
+  }
+});
+
+module.exports = router;
 
 
 

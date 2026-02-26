@@ -15,6 +15,7 @@ const sportSchema = new mongoose.Schema({
 
 const academySchema = new mongoose.Schema({
   name: String,
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   email: { type: String, required: true, unique: true },
   phone: String,
   address: String,

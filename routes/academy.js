@@ -6,7 +6,7 @@ const nodemailer = require('nodemailer');
 
 const Academy = require('../models/Academy');
 const User = require('../models/User');
-const { capitalizeWords, decrypt } = require('../utils/helperFunctions');
+const { capitalizeWords, decrypt, encrypt } = require('../utils/helperFunctions');
 
 // POST /academy/onboard-academy
 /**
@@ -46,15 +46,29 @@ router.post('/onboard-academy', async (req, res) => {
       name, email, phone, address, city
     } = req.body;
 
+    if (!name || !email || !phone || !address || !city) {
+      return res.status(400).json({ message: 'All fields are required' });
+    }
+
     // Check if academy email already exists
     const existingUser = await User.findOne({ email: email.toLowerCase() });
+    if (existingUser) {
+      return res.status(400).json({ message: 'Academy email already exists' });
+    }
+    const existingPhone = await User.findOne({ phone: phone.toLowerCase() });
+    if (existingPhone) {
+      return res.status(400).json({ message: 'Academy phone already exists' });
+    }
 
     const passwordPlain = crypto.randomBytes(6).toString('hex'); // 12-char random password
+
+    let academyUser;
     if (!existingUser) {
       // Create random password
       const hashedPassword = await bcrypt.hash(passwordPlain, 10);
       // Create Academy User account
-      const academyUser = new User({
+      academyUser = new User({
+        name: name.toLowerCase(),
         email: email.toLowerCase(),
         password: hashedPassword,
         phone,
@@ -69,6 +83,7 @@ router.post('/onboard-academy', async (req, res) => {
     // Create Academy document
     const newAcademy = new Academy({
       name: name.toLowerCase(),
+      userId: academyUser._id,
       email: email.toLowerCase(),
       phone: phone.toLowerCase(),
       address: address.toLowerCase(),
@@ -475,6 +490,37 @@ router.get("/getCourts", async (req, res) => {
   }
 });
 
+router.post('/user-academies', async (req, res) => {
+  try {
+    const { userId } = req.body;
+
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        message: 'userId is required'
+      });
+    }
+
+    const userIdDecrypted = decrypt(userId);
+
+    const academies = await Academy.find({ userId: userIdDecrypted })
+      .populate('userId', 'name email phone') // optional
+      .sort({ name: -1 });
+
+    return res.status(200).json({
+      success: true,
+      count: academies.length,
+      data: academies
+    });
+
+  } catch (error) {
+    console.error('Error fetching user academies:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Server error'
+    });
+  }
+});
 
 
 module.exports = router;
