@@ -8,7 +8,9 @@ app.use(cors());
 app.use(express.json());
 
 const authRoutes = require('./routes/auth');
-app.use('/api/auth', authRoutes);
+const { authenticateToken } = require('./middleware/authMiddleware');
+app.use(['/api/auth', '/auth'], authRoutes);
+app.use(authenticateToken);
 
 const academyRoutes = require('./routes/academy');
 app.use('/api/academy', academyRoutes);

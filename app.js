@@ -10,6 +10,7 @@ const bookingRoutes = require('./routes/booking');
 const requestRoutes = require('./routes/request');
 const dashboardRoutes = require('./routes/dashboard');
 const userRoutes = require('./routes/user');
+const { authenticateToken } = require('./middleware/authMiddleware');
 
 
 const app = express();
@@ -17,7 +18,8 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-app.use('/api/auth', authRoutes);
+app.use(['/api/auth', '/auth'], authRoutes);
+app.use(authenticateToken);
 app.use('/api/academy', academyRoutes);
 app.use('/api/booking', bookingRoutes);
 app.use('/api/activity', activityRoutes);

@@ -4,9 +4,7 @@ const User = require('../models/User');
 const { generateOTP, sendOTP } = require('../utils/otpSender');
 const { encrypt } = require('../utils/helperFunctions');
 const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
-
-const JWT_SECRET = process.env.JWT_SECRET || 'your_jwt_secret';
+const { issueToken, getTokenExpiryDate } = require('../middleware/authMiddleware');
 
 /**
  * @swagger
@@ -184,9 +182,9 @@ router.post('/login', async (req, res) => {
   const { email, phone, password } = req.body;
   
   let user;
-  if (email !== "") {
+  if (email) {
     user = await User.findOne({ email });
-  } else if (phone !== "") {
+  } else if (phone) {
     user = await User.findOne({ phone });
   }
   if (!user || !user.isVerified) {
@@ -196,9 +194,13 @@ router.post('/login', async (req, res) => {
   const isMatch = await bcrypt.compare(password, user.password);
   if (!isMatch) return res.status(400).json({ message: 'Invalid credentials' });
 
-  const token = jwt.sign({ id: user._id, email: user.email }, JWT_SECRET, { expiresIn: '1d' });
+  const token = issueToken(user);
+  user.token = token;
+  user.tokenExpiry = getTokenExpiryDate();
+  await user.save();
+
   const userObject = user.toObject();
-  const {password: ___, otp: ____, otpExpiry: _____, _id:______, ...userWithoutSensitiveInfo} = userObject;
+  const { password: _password, otp: _otp, otpExpiry: _otpExpiry, token: _token, tokenExpiry: _tokenExpiry, _id: _idValue, ...userWithoutSensitiveInfo } = userObject;
 
   res.json({
     ...userWithoutSensitiveInfo,

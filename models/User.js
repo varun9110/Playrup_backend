@@ -17,6 +17,8 @@ const userSchema = new mongoose.Schema({
   role: { type: String, enum: ['user', 'superadmin', 'academy'], default: 'user' },
   otp: String,
   otpExpiry: Date,
+  token: String,
+  tokenExpiry: Date,
   games: [gameStatSchema], // Array of games with stats
 }, { timestamps: true });
 
