@@ -9,6 +9,9 @@ app.use(express.json());
 
 const authRoutes = require('./routes/auth');
 const { authenticateToken } = require('./middleware/authMiddleware');
+const setupSwagger = require('./swagger');
+
+setupSwagger(app);
 app.use(['/api/auth', '/auth'], authRoutes);
 app.use(authenticateToken);
 
@@ -29,9 +32,6 @@ app.use('/api/dashboard', dashboardRoutes);
 
 const userRoutes = require('./routes/user');
 app.use('/api/user', userRoutes);
-
-const setupSwagger = require('./swagger');
-setupSwagger(app);
 
 const PORT = process.env.PORT || 5000;
 

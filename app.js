@@ -11,6 +11,7 @@ const requestRoutes = require('./routes/request');
 const dashboardRoutes = require('./routes/dashboard');
 const userRoutes = require('./routes/user');
 const { authenticateToken } = require('./middleware/authMiddleware');
+const setupSwagger = require('./swagger');
 
 
 const app = express();
@@ -18,6 +19,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+setupSwagger(app);
 app.use(['/api/auth', '/auth'], authRoutes);
 app.use(authenticateToken);
 app.use('/api/academy', academyRoutes);
