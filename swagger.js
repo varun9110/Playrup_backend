@@ -314,6 +314,249 @@ const swaggerSpec = {
         responses: { '200': { description: 'User activities returned' } },
       },
     },
+    '/api/activity/chat/{activityId}/participants': {
+      get: {
+        tags: ['Activity Chat'],
+        summary: 'Get activity chat participants',
+        security: [{ BearerAuth: [] }],
+        parameters: [
+          {
+            name: 'activityId',
+            in: 'path',
+            required: true,
+            schema: { type: 'string' },
+          },
+        ],
+        responses: {
+          '200': { description: 'Chat participants returned' },
+          '403': { description: 'Only activity participants can access chat' },
+          '404': { description: 'Activity not found' },
+        },
+      },
+    },
+    '/api/activity/chat/{activityId}/messages': {
+      get: {
+        tags: ['Activity Chat'],
+        summary: 'Get activity chat messages',
+        security: [{ BearerAuth: [] }],
+        parameters: [
+          {
+            name: 'activityId',
+            in: 'path',
+            required: true,
+            schema: { type: 'string' },
+          },
+          {
+            name: 'limit',
+            in: 'query',
+            required: false,
+            schema: { type: 'integer', minimum: 1, maximum: 100, default: 30 },
+          },
+          {
+            name: 'before',
+            in: 'query',
+            required: false,
+            description: 'ISO date cursor to fetch older messages',
+            schema: { type: 'string', format: 'date-time' },
+          },
+        ],
+        responses: {
+          '200': { description: 'Chat messages returned' },
+          '400': { description: 'Invalid query parameters' },
+          '403': { description: 'Only activity participants can access chat' },
+          '404': { description: 'Activity not found' },
+        },
+      },
+      post: {
+        tags: ['Activity Chat'],
+        summary: 'Send a chat message to activity participants',
+        security: [{ BearerAuth: [] }],
+        parameters: [
+          {
+            name: 'activityId',
+            in: 'path',
+            required: true,
+            schema: { type: 'string' },
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  message: { type: 'string', maxLength: 1000 },
+                  attachment: {
+                    type: 'object',
+                    properties: {
+                      url: { type: 'string' },
+                      fileName: { type: 'string' },
+                      mimeType: { type: 'string' },
+                      size: { type: 'number' },
+                    },
+                  },
+                },
+                description: 'At least one of message or attachment should be provided.',
+              },
+            },
+          },
+        },
+        responses: {
+          '201': { description: 'Chat message sent' },
+          '400': { description: 'Invalid message payload' },
+          '403': { description: 'Only activity participants can send chat messages' },
+          '404': { description: 'Activity not found' },
+        },
+      },
+    },
+    '/api/activity/chat/{activityId}/read': {
+      post: {
+        tags: ['Activity Chat'],
+        summary: 'Mark activity chat messages as read',
+        security: [{ BearerAuth: [] }],
+        parameters: [
+          {
+            name: 'activityId',
+            in: 'path',
+            required: true,
+            schema: { type: 'string' },
+          },
+        ],
+        requestBody: {
+          required: false,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  messageIds: {
+                    type: 'array',
+                    items: { type: 'string' },
+                    description: 'Optional list of message IDs. If omitted, marks all unread messages in this activity as read.',
+                  },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          '200': { description: 'Read status updated' },
+          '403': { description: 'Only activity participants can update read status' },
+          '404': { description: 'Activity not found' },
+        },
+      },
+    },
+    '/api/activity/chat/{activityId}/upload-photo': {
+      post: {
+        tags: ['Activity Chat'],
+        summary: 'Upload an image for activity chat message',
+        security: [{ BearerAuth: [] }],
+        parameters: [
+          {
+            name: 'activityId',
+            in: 'path',
+            required: true,
+            schema: { type: 'string' },
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            'multipart/form-data': {
+              schema: {
+                type: 'object',
+                properties: {
+                  image: {
+                    type: 'string',
+                    format: 'binary',
+                  },
+                },
+                required: ['image'],
+              },
+            },
+          },
+        },
+        responses: {
+          '201': { description: 'Image uploaded successfully' },
+          '400': { description: 'Invalid upload payload' },
+          '403': { description: 'Only activity participants can upload chat images' },
+          '404': { description: 'Activity not found' },
+        },
+      },
+    },
+    '/api/activity/chat/{activityId}/typing': {
+      get: {
+        tags: ['Activity Chat'],
+        summary: 'Get users currently typing in activity chat',
+        security: [{ BearerAuth: [] }],
+        parameters: [
+          {
+            name: 'activityId',
+            in: 'path',
+            required: true,
+            schema: { type: 'string' },
+          },
+        ],
+        responses: {
+          '200': { description: 'Typing users returned' },
+          '403': { description: 'Only activity participants can access typing status' },
+          '404': { description: 'Activity not found' },
+        },
+      },
+      post: {
+        tags: ['Activity Chat'],
+        summary: 'Set current user typing status in activity chat',
+        security: [{ BearerAuth: [] }],
+        parameters: [
+          {
+            name: 'activityId',
+            in: 'path',
+            required: true,
+            schema: { type: 'string' },
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  isTyping: { type: 'boolean' },
+                },
+                required: ['isTyping'],
+              },
+            },
+          },
+        },
+        responses: {
+          '200': { description: 'Typing status updated' },
+          '403': { description: 'Only activity participants can update typing status' },
+          '404': { description: 'Activity not found' },
+        },
+      },
+    },
+    '/api/activity/chat/{activityId}/unread-count': {
+      get: {
+        tags: ['Activity Chat'],
+        summary: 'Get unread chat message count for current user',
+        security: [{ BearerAuth: [] }],
+        parameters: [
+          {
+            name: 'activityId',
+            in: 'path',
+            required: true,
+            schema: { type: 'string' },
+          },
+        ],
+        responses: {
+          '200': { description: 'Unread count returned' },
+          '403': { description: 'Only activity participants can access unread count' },
+          '404': { description: 'Activity not found' },
+        },
+      },
+    },
     '/api/request/hosted/pending-requests': {
       post: {
         tags: ['Request'],
