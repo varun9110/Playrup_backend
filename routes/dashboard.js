@@ -3,12 +3,16 @@ const router = express.Router();
 const Booking = require('../models/Booking');
 const Academy = require('../models/Academy');
 const Activity = require('../models/Activity');
+const User = require('../models/User');
+const { completeOverdueActivities } = require('../services/activityAutoCompletion');
 
 const { encrypt, decrypt } = require('../utils/helperFunctions');
 const e = require('express');
 
 router.post('/dashboard-data', async (req, res) => {
     try {
+        await completeOverdueActivities();
+
         const { userEmail, userId } = req.body;
 
         if (!userId || !userEmail) {
@@ -21,6 +25,7 @@ router.post('/dashboard-data', async (req, res) => {
         const userIdDecrypted = decrypt(userId);
 
         const now = new Date();
+        const userRecord = await User.findById(userIdDecrypted).select('karmaPoints');
 
         // -----------------------------
         // 1️⃣ Upcoming bookings
@@ -120,7 +125,8 @@ router.post('/dashboard-data', async (req, res) => {
             upcomingBookings: encryptedUpcomingBookings,
             pastActivitiesCount: pastActivitiesFiltered.length,
             recentPastActivities: encryptedRecentPastActivities,
-            pastHostedActivitiesCount
+            pastHostedActivitiesCount,
+            totalKarmaPoints: userRecord?.karmaPoints || 0
         });
 
     } catch (error) {

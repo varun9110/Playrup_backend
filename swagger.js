@@ -284,6 +284,33 @@ const swaggerSpec = {
         responses: { '200': { description: 'Activity cancelled' } },
       },
     },
+    '/api/activity/completeActivity': {
+      post: {
+        tags: ['Activity'],
+        summary: 'Mark an activity as completed and trigger karma distribution',
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  activityId: { type: 'string' },
+                  hostEmail: { type: 'string', description: 'Encrypted host email' },
+                  hostId: { type: 'string', description: 'Encrypted host userId' },
+                },
+                required: ['activityId', 'hostEmail', 'hostId'],
+              },
+            },
+          },
+        },
+        responses: {
+          '200': { description: 'Activity completed and karma distribution triggered' },
+          '400': { description: 'Invalid request or activity cannot be completed yet' },
+          '404': { description: 'Activity not found or caller is not the host' },
+        },
+      },
+    },
     '/api/activity/requestJoin': {
       post: {
         tags: ['Activity'],
@@ -749,7 +776,26 @@ const swaggerSpec = {
             },
           },
         },
-        responses: { '200': { description: 'Dashboard data returned' } },
+        responses: {
+          '200': {
+            description: 'Dashboard data returned',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    upcomingBookingsCount: { type: 'number' },
+                    upcomingBookings: { type: 'array', items: { type: 'object', additionalProperties: true } },
+                    pastActivitiesCount: { type: 'number' },
+                    recentPastActivities: { type: 'array', items: { type: 'object', additionalProperties: true } },
+                    pastHostedActivitiesCount: { type: 'number' },
+                    totalKarmaPoints: { type: 'number', description: 'Total karma points earned by the user' },
+                  },
+                },
+              },
+            },
+          },
+        },
       },
     },
     '/api/user/all-sports': {

@@ -18,7 +18,10 @@ const activitySchema = new mongoose.Schema({
   pricePerParticipant: { type: Number, default: 0 },
   joinedPlayers: {type: [mongoose.Schema.Types.ObjectId], ref: 'User', required: true, default: [] },
   pendingRequests: { type: [mongoose.Schema.Types.ObjectId], ref: 'User', required: true, default: [] },
-  status: { type: String, default: 'Active' }
+  status: { type: String, enum: ['Active', 'Cancelled', 'Completed'], default: 'Active' },
+  completedAt: { type: Date, default: null },
+  karmaDistributed: { type: Boolean, default: false },
+  karmaDistributedAt: { type: Date, default: null }
 }, { timestamps: true });
 
 module.exports = mongoose.model('Activity', activitySchema);

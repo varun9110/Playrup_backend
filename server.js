@@ -12,6 +12,11 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 const authRoutes = require('./routes/auth');
 const { authenticateToken } = require('./middleware/authMiddleware');
 const setupSwagger = require('./swagger');
+const { initActivityCompletionSubscriber } = require('./events/activityCompletionSubscriber');
+const { initActivityAutoCompletion } = require('./services/activityAutoCompletion');
+
+initActivityCompletionSubscriber();
+initActivityAutoCompletion();
 
 setupSwagger(app);
 app.use(['/api/auth', '/auth'], authRoutes);

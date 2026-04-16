@@ -8,6 +8,10 @@ const Request = require('../models/Request');
 const User = require('../models/User');
 const ActivityChatMessage = require('../models/ActivityChatMessage');
 const { encrypt, decrypt } = require('../utils/helperFunctions');
+const { publishSync } = require('../events/eventBus');
+const { ACTIVITY_COMPLETED_TOPIC } = require('../events/topics');
+const { parseActivityDateTime } = require('../utils/activityTime');
+const { completeOverdueActivities } = require('../services/activityAutoCompletion');
 
 const MAX_CHAT_MESSAGE_LENGTH = 1000;
 const CHAT_TYPING_TTL_MS = 5000;
@@ -126,7 +130,6 @@ const getTypingParticipants = (activityId, currentUserId) => {
   );
 };
 
-
 // Create Activity with extended fields
 router.post('/createActivity', async (req, res) => {
   try {
@@ -185,6 +188,8 @@ router.post('/createActivity', async (req, res) => {
 // Get all future Active activities
 router.get('/allActivities', async (req, res) => {
   try {
+    await completeOverdueActivities();
+
     const today = new Date().toISOString().split('T')[0];
 
     const activities = await Activity.find({
@@ -295,10 +300,71 @@ router.post('/cancelActivity', async (req, res) => {
   }
 });
 
+// Mark activity as completed and trigger karma distribution via pub/sub
+router.post('/completeActivity', async (req, res) => {
+  try {
+    const { activityId, hostEmail, hostId } = req.body;
+
+    if (!activityId || !hostEmail || !hostId) {
+      return res.status(400).json({ message: 'activityId, hostEmail and hostId are required' });
+    }
+
+    const userEmailDecrypted = decrypt(hostEmail);
+    const userIdDecrypted = decrypt(hostId);
+
+    const activity = await Activity.findOne({
+      _id: activityId,
+      hostEmail: userEmailDecrypted,
+      hostId: userIdDecrypted
+    });
+
+    if (!activity) {
+      return res.status(404).json({ message: 'Activity not found or you are not the host' });
+    }
+
+    if (activity.status === 'Cancelled') {
+      return res.status(400).json({ message: 'Cancelled activity cannot be completed' });
+    }
+
+    if (activity.status === 'Completed') {
+      return res.status(200).json({
+        message: 'Activity is already completed',
+        activityId: activity._id,
+        status: activity.status,
+        karmaDistributed: activity.karmaDistributed
+      });
+    }
+
+    const activityEndDateTime = parseActivityDateTime(activity.date, activity.toTime);
+    if (activityEndDateTime && activityEndDateTime > new Date()) {
+      return res.status(400).json({ message: 'Activity can only be completed after end time' });
+    }
+
+    activity.status = 'Completed';
+    activity.completedAt = new Date();
+    await activity.save();
+
+    publishSync(ACTIVITY_COMPLETED_TOPIC, {
+      activityId: activity._id.toString()
+    });
+
+    return res.status(200).json({
+      message: 'Activity completed successfully and karma distribution triggered',
+      activityId: activity._id,
+      status: activity.status
+    });
+  } catch (error) {
+    console.error('Error completing activity:', error);
+    return res.status(500).json({ message: 'Server error' });
+  }
+});
+
 
 // Request to join an activity
 router.post('/requestJoin', async (req, res) => {
   try {
+    await completeOverdueActivities();
+
     const { activityId, userEmail, userId } = req.body;
 
     const userEmailDecrypted = decrypt(userEmail);
@@ -351,6 +417,8 @@ router.post('/requestJoin', async (req, res) => {
 // POST endpoint to get user activities
 router.post('/userActivities', async (req, res) => {
   try {
+    await completeOverdueActivities();
+
     const { userEmail, userId } = req.body;
 
     const userEmailDecrypted = decrypt(userEmail);

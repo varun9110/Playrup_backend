@@ -19,6 +19,7 @@ const userSchema = new mongoose.Schema({
   otpExpiry: Date,
   token: String,
   tokenExpiry: Date,
+  karmaPoints: { type: Number, default: 0 },
   games: [gameStatSchema], // Array of games with stats
 }, { timestamps: true });
 

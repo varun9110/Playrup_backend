@@ -13,9 +13,14 @@ const dashboardRoutes = require('./routes/dashboard');
 const userRoutes = require('./routes/user');
 const { authenticateToken } = require('./middleware/authMiddleware');
 const setupSwagger = require('./swagger');
+const { initActivityCompletionSubscriber } = require('./events/activityCompletionSubscriber');
+const { initActivityAutoCompletion } = require('./services/activityAutoCompletion');
 
 
 const app = express();
+
+initActivityCompletionSubscriber();
+initActivityAutoCompletion();
 
 app.use(cors());
 app.use(express.json());
