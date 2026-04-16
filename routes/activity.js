@@ -238,8 +238,6 @@ router.get('/allActivities', async (req, res) => {
 });
 
 
-
-
 // Soft delete / cancel user's activity
 router.post('/cancelActivity', async (req, res) => {
   try {
@@ -433,8 +431,17 @@ router.post('/userActivities', async (req, res) => {
     .populate({
       path: 'hostId',
       select: 'email name phone role isVerified createdAt' // only send what you need
-    })
-    .sort({ date: 1, fromTime: 1 });
+    });
+
+    activities.sort((a, b) => {
+      const aStartDateTime = parseActivityDateTime(a.date, a.fromTime);
+      const bStartDateTime = parseActivityDateTime(b.date, b.fromTime);
+
+      const aTime = aStartDateTime ? aStartDateTime.getTime() : 0;
+      const bTime = bStartDateTime ? bStartDateTime.getTime() : 0;
+
+      return bTime - aTime;
+    });
 
     const activitiesWithEncryptedData = activities.map(activity => {
       const activityObj = activity.toObject();
@@ -789,75 +796,5 @@ router.get('/chat/:activityId/unread-count', async (req, res) => {
     return res.status(500).json({ message: 'Failed to fetch unread count' });
   }
 });
-
-// Fetch activity by ID
-// router.get('/:activityId', async (req, res) => {
-//   try {
-//     const { activityId } = req.params;
-
-//     const activity = await Activity.findById(activityId);
-
-//     if (!activity) {
-//       return res.status(404).json({
-//         message: 'Activity not found'
-//       });
-//     }
-
-//     res.status(200).json({ activity });
-//   } catch (error) {
-//     console.error('Error fetching activity:', error);
-
-//     res.status(500).json({
-//       message: 'Failed to fetch activity',
-//       error: error.message
-//     });
-//   }
-// });
-
-// // Update Activity
-// router.put('/updateActivity/:activityId', async (req, res) => {
-//   try {
-//     const { activityId } = req.params;
-//     const updateData = {};
-
-//     // List of allowed fields to update
-//     const allowedFields = [
-//       'city',
-//       'location',
-//       'sport',
-//       'academy',
-//       'address',
-//       'date',
-//       'fromTime',
-//       'toTime',
-//       'courtNumber',
-//       'skillLevel',
-//       'maxPlayers',
-//       'pricePerParticipant'
-//     ];
-
-//     // Only include fields that are present in req.body
-//     allowedFields.forEach(field => {
-//       if (req.body[field] !== undefined) {
-//         updateData[field] = req.body[field];
-//       }
-//     });
-
-//     const activity = await Activity.findById(activityId);
-//     if (!activity) {
-//       return res.status(404).json({ success: false, message: 'Activity not found' });
-//     }
-
-//     // Update fields
-//     Object.assign(activity, updateData);
-//     await activity.save();
-
-//     res.json({ success: true, message: 'Activity updated successfully', activity });
-//   } catch (error) {
-//     console.error(error);
-//     res.status(500).json({ success: false, message: 'Failed to update activity' });
-//   }
-// });
-
 
 module.exports = router;
