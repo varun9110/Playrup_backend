@@ -12,6 +12,7 @@ const { publishSync } = require('../events/eventBus');
 const { ACTIVITY_COMPLETED_TOPIC } = require('../events/topics');
 const { parseActivityDateTime } = require('../utils/activityTime');
 const { completeOverdueActivities } = require('../services/activityAutoCompletion');
+const { createNotification } = require('../services/notificationService');
 const {
   FEEDBACK_SCORE_VALUES,
   FEEDBACK_SKILL_LEVELS,
@@ -274,6 +275,7 @@ router.post('/createActivity', async (req, res) => {
 router.get('/allActivities', async (req, res) => {
   try {
     await completeOverdueActivities();
+    const currentUserId = req.user?._id;
 
     const today = new Date().toISOString().split('T')[0];
 
@@ -293,7 +295,14 @@ router.get('/allActivities', async (req, res) => {
 
       return {
         ...rest,
-        feedbackStatus: buildFeedbackStatusForUser(activityObj, userIdDecrypted),
+        feedbackStatus: currentUserId
+          ? buildFeedbackStatusForUser(activityObj, currentUserId)
+          : {
+            canSubmit: false,
+            totalRecipients: 0,
+            submittedCount: 0,
+            isComplete: false
+          },
         // Encrypt activity-level sensitive fields
         joinedPlayers: activityObj.joinedPlayers.map(id =>
           encrypt(id.toString())
@@ -349,6 +358,25 @@ router.post('/cancelActivity', async (req, res) => {
     // Soft delete
     activity.status = 'Cancelled';
     await activity.save();
+
+    const participantIds = Array.from(new Set((activity.joinedPlayers || []).map((id) => id.toString())));
+    const hostIdStr = extractIdString(activity.hostId);
+    for (const participantId of participantIds) {
+      if (participantId === hostIdStr) continue;
+      await createNotification({
+        recipientUserId: participantId,
+        templateKey: 'activity.cancelled.byHost.forParticipants',
+        variables: {
+          hostName: req.user?.name || 'Host',
+          sport: activity.sport,
+          date: activity.date,
+          fromTime: activity.fromTime
+        },
+        metadata: {
+          activityId: activity._id
+        }
+      });
+    }
 
     const activityObj = activity.toObject();
     const { hostEmail: _, hostId: __, ...cleanedActivity } = activityObj;
@@ -482,6 +510,22 @@ router.post('/requestJoin', async (req, res) => {
       userEmail: userEmailDecrypted,
       userId: userIdDecrypted,
       status: 'Pending'
+    });
+
+    const requester = await User.findById(userIdDecrypted).select('name');
+    await createNotification({
+      recipientUserId: activity.hostId,
+      templateKey: 'activity.joinRequest.sent.forHost',
+      variables: {
+        userName: requester?.name || 'A player',
+        sport: activity.sport,
+        date: activity.date,
+        fromTime: activity.fromTime
+      },
+      metadata: {
+        activityId: activity._id,
+        requestId: newRequest._id
+      }
     });
 
     const newRequestPayload = {

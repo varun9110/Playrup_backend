@@ -2,6 +2,7 @@ const Activity = require('../models/Activity');
 const User = require('../models/User');
 const { subscribe } = require('./eventBus');
 const { ACTIVITY_COMPLETED_TOPIC } = require('./topics');
+const { createNotification } = require('../services/notificationService');
 
 const HOST_KARMA_POINTS = 5;
 const PARTICIPANT_KARMA_POINTS = 3;
@@ -14,7 +15,7 @@ const distributeKarmaOnActivityCompletion = async (_topic, payload) => {
     if (!activityId) return;
 
     const activity = await Activity.findById(activityId).select(
-      '_id hostId joinedPlayers status karmaDistributed'
+      '_id hostId joinedPlayers status karmaDistributed sport'
     );
 
     if (!activity || activity.status !== 'Completed' || activity.karmaDistributed) {
@@ -43,6 +44,19 @@ const distributeKarmaOnActivityCompletion = async (_topic, payload) => {
       }));
 
       await User.bulkWrite(karmaUpdates);
+
+      for (const participantId of joinedPlayerIds) {
+        await createNotification({
+          recipientUserId: participantId,
+          templateKey: 'activity.completed.rateGame.forParticipants',
+          variables: {
+            sport: activity.sport || 'activity'
+          },
+          metadata: {
+            activityId: activity._id
+          }
+        });
+      }
     }
 
     activity.karmaDistributed = true;

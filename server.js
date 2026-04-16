@@ -14,9 +14,15 @@ const { authenticateToken } = require('./middleware/authMiddleware');
 const setupSwagger = require('./swagger');
 const { initActivityCompletionSubscriber } = require('./events/activityCompletionSubscriber');
 const { initActivityAutoCompletion } = require('./services/activityAutoCompletion');
+const { initNotificationReminderService } = require('./services/notificationReminderService');
+const { ensureDefaultTemplates } = require('./services/notificationService');
 
 initActivityCompletionSubscriber();
 initActivityAutoCompletion();
+initNotificationReminderService();
+ensureDefaultTemplates().catch((error) => {
+  console.error('Failed to initialize notification templates:', error);
+});
 
 setupSwagger(app);
 app.use(['/api/auth', '/auth'], authRoutes);
@@ -39,6 +45,9 @@ app.use('/api/dashboard', dashboardRoutes);
 
 const userRoutes = require('./routes/user');
 app.use('/api/user', userRoutes);
+
+const notificationRoutes = require('./routes/notification');
+app.use('/api/notification', notificationRoutes);
 
 const PORT = process.env.PORT || 5000;
 

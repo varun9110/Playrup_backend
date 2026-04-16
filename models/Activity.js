@@ -34,6 +34,7 @@ const activitySchema = new mongoose.Schema({
   joinedPlayers: {type: [mongoose.Schema.Types.ObjectId], ref: 'User', required: true, default: [] },
   pendingRequests: { type: [mongoose.Schema.Types.ObjectId], ref: 'User', required: true, default: [] },
   status: { type: String, enum: ['Active', 'Cancelled', 'Completed'], default: 'Active' },
+  reminder15Sent: { type: Boolean, default: false },
   completedAt: { type: Date, default: null },
   karmaDistributed: { type: Boolean, default: false },
   karmaDistributedAt: { type: Date, default: null },

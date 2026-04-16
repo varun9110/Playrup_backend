@@ -4,6 +4,7 @@ const Activity = require('../models/Activity');
 const ActivityRequest = require('../models/Request');
 const User = require('../models/User');
 const { parseActivityDateTime } = require('../utils/activityTime');
+const { createNotification } = require('../services/notificationService');
 
 const { encrypt, decrypt } = require('../utils/helperFunctions');
 const e = require('express');
@@ -241,6 +242,22 @@ router.post('/approve-request', async (req, res) => {
     request.respondedAt = new Date();
     await request.save();
 
+    const host = await User.findById(activity.hostId).select('name');
+    await createNotification({
+      recipientUserId: userIdDecrypted,
+      templateKey: 'activity.request.accepted.forParticipant',
+      variables: {
+        sport: activity.sport,
+        date: activity.date,
+        fromTime: activity.fromTime,
+        hostName: host?.name || 'Host'
+      },
+      metadata: {
+        activityId: activity._id,
+        requestId: request._id
+      }
+    });
+
     // Encrypt sensitive fields in response
     const encryptedActivity = {
       ...activity.toObject(),
@@ -324,6 +341,22 @@ router.post('/reject-request', async (req, res) => {
     request.respondedAt = new Date();
     await request.save();
 
+    const host = await User.findById(activity.hostId).select('name');
+    await createNotification({
+      recipientUserId: userIdDecrypted,
+      templateKey: 'activity.request.rejected.forParticipant',
+      variables: {
+        sport: activity.sport,
+        date: activity.date,
+        fromTime: activity.fromTime,
+        hostName: host?.name || 'Host'
+      },
+      metadata: {
+        activityId: activity._id,
+        requestId: request._id
+      }
+    });
+
     // Encrypt sensitive fields in response
     const encryptedActivity = {
       ...activity.toObject(),
@@ -377,7 +410,7 @@ router.post('/withdraw-request', async (req, res) => {
     // Find the request document
     const request = await ActivityRequest.findOne({
       _id: requestId,
-      status: { $in: ['Pending', 'Approved'] }
+      status: { $in: ['Pending', 'Approved', 'Accepted'] }
     }).populate('userId', 'email name phone role isVerified');
 
 
@@ -404,7 +437,7 @@ router.post('/withdraw-request', async (req, res) => {
     }
 
     // If request was Approved → remove from joinedPlayers
-    if (request.status === 'Approved') {
+    if (request.status === 'Approved' || request.status === 'Accepted') {
       activity.joinedPlayers = activity.joinedPlayers.filter(
         id => id.toString() !== userIdDecrypted.toString()
       );
@@ -415,6 +448,22 @@ router.post('/withdraw-request', async (req, res) => {
 
     await activity.save();
     await request.save();
+
+    const withdrawingUser = await User.findById(userIdDecrypted).select('name');
+    await createNotification({
+      recipientUserId: activity.hostId,
+      templateKey: 'activity.withdrawn.byUser.forHost',
+      variables: {
+        userName: withdrawingUser?.name || 'A player',
+        sport: activity.sport,
+        date: activity.date,
+        fromTime: activity.fromTime
+      },
+      metadata: {
+        activityId: activity._id,
+        requestId: request._id
+      }
+    });
 
     res.status(200).json({
       message: 'Request withdrawn successfully'

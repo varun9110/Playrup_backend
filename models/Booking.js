@@ -14,7 +14,8 @@ const bookingSchema = new mongoose.Schema({
     type: String,
     enum: ['Confirmed', 'Cancelled'],
     default: 'Confirmed'
-  }
+  },
+  reminder15Sent: { type: Boolean, default: false }
 }, { timestamps: true });
 
 module.exports = mongoose.model('Booking', bookingSchema);

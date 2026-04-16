@@ -3,6 +3,8 @@ const mongoose = require('mongoose');
 const router = express.Router();
 const Booking = require('../models/Booking');
 const Academy = require('../models/Academy');
+const User = require('../models/User');
+const { createNotification } = require('../services/notificationService');
 const {
   isTimeOverlap,
   timeToMinutes,
@@ -73,6 +75,29 @@ router.post('/create', async (req, res) => {
     });
 
     await newBooking.save();
+
+    const [academyUser, bookingUser] = await Promise.all([
+      Academy.findById(academyId).select('name userId'),
+      User.findById(userIdDecrypted).select('name')
+    ]);
+
+    if (academyUser?.userId) {
+      await createNotification({
+        recipientUserId: academyUser.userId,
+        templateKey: 'booking.created.forAcademy',
+        variables: {
+          userName: bookingUser?.name || 'A player',
+          sport,
+          courtNumber,
+          date,
+          startTime
+        },
+        metadata: {
+          bookingId: newBooking._id,
+          academyId
+        }
+      });
+    }
 
     res.json({
       message: 'Booking successful',
@@ -224,6 +249,59 @@ router.post('/cancel-booking', async (req, res) => {
   }
 });
 
+// Academy cancels booking and user gets a notification
+router.post('/academy-cancel-booking', async (req, res) => {
+  try {
+    const { bookingId, academyId } = req.body;
+
+    if (!bookingId || !academyId) {
+      return res.status(400).json({ message: 'bookingId and academyId are required' });
+    }
+
+    const academy = await Academy.findById(academyId).select('name userId');
+    if (!academy) {
+      return res.status(404).json({ message: 'Academy not found' });
+    }
+
+    if (req.user.role !== 'academy' || academy.userId.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ message: 'Only the academy owner can cancel this booking' });
+    }
+
+    const booking = await Booking.findOne({
+      _id: bookingId,
+      academyId,
+      status: 'Confirmed'
+    });
+
+    if (!booking) {
+      return res.status(404).json({ message: 'Booking not found or already cancelled' });
+    }
+
+    booking.status = 'Cancelled';
+    await booking.save();
+
+    await createNotification({
+      recipientUserId: booking.userId,
+      templateKey: 'booking.cancelled.byAcademy.forUser',
+      variables: {
+        academyName: academy.name || 'Academy',
+        sport: booking.sport,
+        date: booking.date,
+        startTime: booking.startTime
+      },
+      metadata: {
+        bookingId: booking._id,
+        academyId
+      }
+    });
+
+    return res.status(200).json({ message: 'Booking cancelled by academy successfully', booking });
+  } catch (error) {
+    console.error('Error cancelling booking by academy:', error);
+    return res.status(500).json({ message: 'Failed to cancel booking' });
+  }
+});
+
 // MODIFY / RESCHEDULE BOOKING
 router.patch('/modify-booking', async (req, res) => {
   try {
@@ -343,11 +421,6 @@ router.post('/academy-bookings', async (req, res) => {
     res.status(500).json({ success: false, message: 'Server Error', error: error.message });
   }
 });
-
-module.exports = router;
-
-
-
 
 /** TO_DO TO DO
  * create an endpoint to charge or refund the money for the booking modification and cancellation

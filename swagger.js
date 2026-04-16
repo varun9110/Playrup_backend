@@ -759,7 +759,7 @@ const swaggerSpec = {
     '/api/request/approve-request': {
       post: {
         tags: ['Request'],
-        summary: 'Approve a request',
+        summary: 'Approve a request and notify participant',
         requestBody: {
           required: true,
           content: {
@@ -906,6 +906,28 @@ const swaggerSpec = {
         responses: { '200': { description: 'Academy bookings returned' } },
       },
     },
+    '/api/booking/academy-cancel-booking': {
+      post: {
+        tags: ['Booking'],
+        summary: 'Cancel a booking by academy and notify user',
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  bookingId: { type: 'string' },
+                  academyId: { type: 'string' },
+                },
+                required: ['bookingId', 'academyId'],
+              },
+            },
+          },
+        },
+        responses: { '200': { description: 'Booking cancelled and user notified' } },
+      },
+    },
     '/api/dashboard/dashboard-data': {
       post: {
         tags: ['Dashboard'],
@@ -937,6 +959,143 @@ const swaggerSpec = {
               },
             },
           },
+        },
+      },
+    },
+    '/api/notification/my': {
+      get: {
+        tags: ['Notification'],
+        summary: 'Get current user notifications',
+        security: [{ BearerAuth: [] }],
+        parameters: [
+          {
+            name: 'limit',
+            in: 'query',
+            required: false,
+            schema: { type: 'integer', minimum: 1, maximum: 100, default: 25 },
+          },
+          {
+            name: 'offset',
+            in: 'query',
+            required: false,
+            schema: { type: 'integer', minimum: 0, default: 0 },
+          },
+        ],
+        responses: {
+          '200': { description: 'Notifications returned' },
+        },
+      },
+    },
+    '/api/notification/unread-count': {
+      get: {
+        tags: ['Notification'],
+        summary: 'Get unread notification count for current user',
+        security: [{ BearerAuth: [] }],
+        responses: {
+          '200': { description: 'Unread count returned' },
+        },
+      },
+    },
+    '/api/notification/{notificationId}/read': {
+      patch: {
+        tags: ['Notification'],
+        summary: 'Mark a single notification as read',
+        security: [{ BearerAuth: [] }],
+        parameters: [
+          {
+            name: 'notificationId',
+            in: 'path',
+            required: true,
+            schema: { type: 'string' },
+          },
+        ],
+        responses: {
+          '200': { description: 'Notification marked read' },
+        },
+      },
+    },
+    '/api/notification/read-all': {
+      patch: {
+        tags: ['Notification'],
+        summary: 'Mark all current user notifications as read',
+        security: [{ BearerAuth: [] }],
+        responses: {
+          '200': { description: 'All notifications marked read' },
+        },
+      },
+    },
+    '/api/notification/admin/templates': {
+      get: {
+        tags: ['Notification Admin'],
+        summary: 'List notification templates and channel settings',
+        security: [{ BearerAuth: [] }],
+        responses: {
+          '200': { description: 'Template list returned' },
+        },
+      },
+    },
+    '/api/notification/admin/templates/{templateKey}': {
+      put: {
+        tags: ['Notification Admin'],
+        summary: 'Update notification template text and channel toggles',
+        security: [{ BearerAuth: [] }],
+        parameters: [
+          {
+            name: 'templateKey',
+            in: 'path',
+            required: true,
+            schema: { type: 'string' },
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  title: { type: 'string' },
+                  body: { type: 'string' },
+                  channels: {
+                    type: 'object',
+                    properties: {
+                      push: { type: 'boolean' },
+                      email: { type: 'boolean' },
+                      sms: { type: 'boolean' },
+                    },
+                  },
+                },
+                required: ['title', 'body', 'channels'],
+              },
+            },
+          },
+        },
+        responses: {
+          '200': { description: 'Template updated' },
+        },
+      },
+    },
+    '/api/notification/admin/all': {
+      get: {
+        tags: ['Notification Admin'],
+        summary: 'List all notifications for super admin',
+        security: [{ BearerAuth: [] }],
+        parameters: [
+          {
+            name: 'limit',
+            in: 'query',
+            required: false,
+            schema: { type: 'integer', minimum: 1, maximum: 500, default: 100 },
+          },
+          {
+            name: 'offset',
+            in: 'query',
+            required: false,
+            schema: { type: 'integer', minimum: 0, default: 0 },
+          },
+        ],
+        responses: {
+          '200': { description: 'Notifications returned' },
         },
       },
     },
@@ -992,12 +1151,6 @@ const swaggerSpec = {
     },
   },
 };
-
-function setupSwagger(app) {
-  app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
-}
-
-module.exports = setupSwagger;
 
 function setupSwagger(app) {
   app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
