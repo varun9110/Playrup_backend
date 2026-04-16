@@ -3,9 +3,24 @@ const router = express.Router();
 const Activity = require('../models/Activity');
 const ActivityRequest = require('../models/Request');
 const User = require('../models/User');
+const { parseActivityDateTime } = require('../utils/activityTime');
 
 const { encrypt, decrypt } = require('../utils/helperFunctions');
 const e = require('express');
+
+const getActivityEndDateTime = (activity) => {
+  if (!activity) return null;
+
+  const dateValue = typeof activity.date === 'string' ? activity.date.split('T')[0] : activity.date;
+  const endTime = activity.toTime || activity.fromTime;
+  return parseActivityDateTime(dateValue, endTime);
+};
+
+const isActivityUpcomingOrOngoing = (activity) => {
+  const activityEndDateTime = getActivityEndDateTime(activity);
+  if (!activityEndDateTime) return false;
+  return activityEndDateTime >= new Date();
+};
 
 /**
  * 1️⃣ Get activities I HOST that have PENDING join requests
@@ -42,8 +57,12 @@ router.post('/hosted/pending-requests', async (req, res) => {
       })
       .sort({ createdAt: -1 });
 
+    const upcomingPendingRequests = pendingRequests.filter(request =>
+      isActivityUpcomingOrOngoing(request.activityId)
+    );
+
     // Map and encrypt sensitive fields
-    const encryptedRequests = pendingRequests.map(request => {
+    const encryptedRequests = upcomingPendingRequests.map(request => {
       const activity = request.activityId.toObject();
       const user = request.userId.toObject();
 
@@ -105,9 +124,13 @@ router.post('/my-requests', async (req, res) => {
       })
       .sort({ createdAt: -1 });
 
+    const upcomingRequests = myRequests.filter(request =>
+      isActivityUpcomingOrOngoing(request.activityId)
+    );
+
     // Map and encrypt sensitive fields
     const encryptedRequests = await Promise.all(
-      myRequests.map(async request => {
+      upcomingRequests.map(async request => {
         const activity = request.activityId.toObject();
         const user = request.userId.toObject();
 
