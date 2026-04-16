@@ -27,6 +27,16 @@ const distributeKarmaOnActivityCompletion = async (_topic, payload) => {
       new Set((activity.joinedPlayers || []).map((playerId) => playerId.toString()))
     );
 
+    const nonHostParticipantIds = joinedPlayerIds.filter((playerId) => playerId !== hostId);
+
+    // No karma distribution for solo-host activities.
+    if (!nonHostParticipantIds.length) {
+      activity.karmaDistributed = true;
+      activity.karmaDistributedAt = new Date();
+      await activity.save();
+      return;
+    }
+
     if (hostId && !joinedPlayerIds.includes(hostId)) {
       joinedPlayerIds.push(hostId);
     }
