@@ -5,6 +5,7 @@ const Academy = require('../models/Academy');
 const Activity = require('../models/Activity');
 const User = require('../models/User');
 const { completeOverdueActivities } = require('../services/activityAutoCompletion');
+const { parseActivityDateTime } = require('../utils/activityTime');
 
 const { encrypt, decrypt } = require('../utils/helperFunctions');
 const e = require('express');
@@ -65,32 +66,19 @@ router.post('/dashboard-data', async (req, res) => {
         });
 
         const pastActivitiesFiltered = pastActivities.filter((activity) => {
-            const baseDate = new Date(activity.date);
-
-            // Convert "6:00 AM" → 24-hour format
-            let [time, modifier] = activity.fromTime.split(' ');
-            let [hours, minutes] = time.split(':').map(Number);
-
-            if (modifier === 'PM' && hours !== 12) {
-                hours += 12;
-            }
-            if (modifier === 'AM' && hours === 12) {
-                hours = 0;
-            }
-
-            // Set correct hours & minutes on base date
-            baseDate.setUTCHours(hours);
-            baseDate.setUTCMinutes(minutes);
-            baseDate.setUTCSeconds(0);
-
-            return baseDate < now;
+            const activityEndDateTime = parseActivityDateTime(activity.date, activity.toTime || activity.fromTime);
+            return activityEndDateTime ? activityEndDateTime < now : false;
         });
 
         // Sort past activities by most recent first
         pastActivitiesFiltered.sort((a, b) => {
-            const aDate = new Date(`${a.date}T${a.fromTime}:00`);
-            const bDate = new Date(`${b.date}T${b.fromTime}:00`);
-            return bDate - aDate; // descending
+            const aDate = parseActivityDateTime(a.date, a.toTime || a.fromTime);
+            const bDate = parseActivityDateTime(b.date, b.toTime || b.fromTime);
+
+            const aTime = aDate ? aDate.getTime() : 0;
+            const bTime = bDate ? bDate.getTime() : 0;
+
+            return bTime - aTime; // descending
         });
 
         const recent5Activities = pastActivitiesFiltered.slice(0, 5);
