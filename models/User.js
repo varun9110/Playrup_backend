@@ -1,5 +1,41 @@
 const mongoose = require('mongoose');
 
+const FEEDBACK_SKILL_LEVELS = ['Beginner', 'Amateur', 'Intermediate', 'Advanced', 'Professional'];
+
+const feedbackProfileSchema = new mongoose.Schema({
+  noShowCount: { type: Number, default: 0 },
+  totalFeedbackReceived: { type: Number, default: 0 },
+  punctual: {
+    punctualCount: { type: Number, default: 0 },
+    lateCount: { type: Number, default: 0 },
+    ratedCount: { type: Number, default: 0 },
+    punctualityPercentage: { type: Number, default: 0 }
+  },
+  teamPlayer: {
+    totalScore: { type: Number, default: 0 },
+    ratingCount: { type: Number, default: 0 },
+    averageScore: { type: Number, default: 0 }
+  },
+  paymentReliability: {
+    totalScore: { type: Number, default: 0 },
+    ratingCount: { type: Number, default: 0 },
+    averageScore: { type: Number, default: 0 }
+  },
+  skillLevel: {
+    ratingCount: { type: Number, default: 0 },
+    averageScore: { type: Number, default: 0 },
+    averageLabel: { type: String, enum: [...FEEDBACK_SKILL_LEVELS, 'Unrated'], default: 'Unrated' },
+    counts: {
+      beginner: { type: Number, default: 0 },
+      amateur: { type: Number, default: 0 },
+      intermediate: { type: Number, default: 0 },
+      advanced: { type: Number, default: 0 },
+      professional: { type: Number, default: 0 }
+    }
+  },
+  lastFeedbackAt: { type: Date, default: null }
+}, { _id: false });
+
 const gameStatSchema = new mongoose.Schema({
   gameName: { type: String, required: true },
   selfRating: { type: Number, default: 0 },        // user's rating for this game
@@ -21,6 +57,7 @@ const userSchema = new mongoose.Schema({
   tokenExpiry: Date,
   karmaPoints: { type: Number, default: 0 },
   games: [gameStatSchema], // Array of games with stats
+  feedbackProfile: { type: feedbackProfileSchema, default: () => ({}) }
 }, { timestamps: true });
 
 module.exports = mongoose.model('User', userSchema);

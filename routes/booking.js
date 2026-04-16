@@ -187,7 +187,6 @@ router.post('/my-bookings', async (req, res) => {
       userId: encrypt(b.userId.toString())  // Encrypt userId before sending back
     }));
 
-    console.log('My Bookings Response:', response); // Debug log
 
     res.json(response);
   } catch (err) {

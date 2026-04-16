@@ -39,6 +39,76 @@ const swaggerSpec = {
           role: { type: 'string' },
         },
       },
+      FeedbackStatus: {
+        type: 'object',
+        properties: {
+          canSubmit: { type: 'boolean' },
+          totalRecipients: { type: 'integer' },
+          submittedCount: { type: 'integer' },
+          isComplete: { type: 'boolean' },
+        },
+      },
+      FeedbackEntryInput: {
+        type: 'object',
+        properties: {
+          recipientId: {
+            type: 'object',
+            description: 'Encrypted recipient user id',
+            additionalProperties: true,
+          },
+          noShow: { type: 'boolean' },
+          punctualStatus: { type: 'string', enum: ['Punctual', 'Late', null] },
+          teamPlayerScore: { type: 'integer', enum: [-2, -1, 1, 2, null] },
+          paymentScore: { type: 'integer', enum: [-2, -1, 1, 2, null] },
+          skillLevel: {
+            type: 'string',
+            enum: ['Beginner', 'Amateur', 'Intermediate', 'Advanced', 'Professional', null]
+          },
+        },
+        required: ['recipientId', 'noShow'],
+      },
+      UserFeedbackProfile: {
+        type: 'object',
+        properties: {
+          noShowCount: { type: 'integer' },
+          totalFeedbackReceived: { type: 'integer' },
+          punctual: {
+            type: 'object',
+            properties: {
+              punctualCount: { type: 'integer' },
+              lateCount: { type: 'integer' },
+              ratedCount: { type: 'integer' },
+              punctualityPercentage: { type: 'number' },
+            },
+          },
+          teamPlayer: {
+            type: 'object',
+            properties: {
+              totalScore: { type: 'number' },
+              ratingCount: { type: 'integer' },
+              averageScore: { type: 'number' },
+            },
+          },
+          paymentReliability: {
+            type: 'object',
+            properties: {
+              totalScore: { type: 'number' },
+              ratingCount: { type: 'integer' },
+              averageScore: { type: 'number' },
+            },
+          },
+          skillLevel: {
+            type: 'object',
+            properties: {
+              ratingCount: { type: 'integer' },
+              averageScore: { type: 'number' },
+              averageLabel: { type: 'string' },
+              counts: { type: 'object', additionalProperties: { type: 'integer' } },
+            },
+          },
+          lastFeedbackAt: { type: 'string', format: 'date-time', nullable: true },
+        },
+      },
       GenericRequest: {
         type: 'object',
         additionalProperties: true,
@@ -339,6 +409,78 @@ const swaggerSpec = {
           },
         },
         responses: { '200': { description: 'User activities returned' } },
+      },
+    },
+    '/api/activity/{activityId}/feedback-form': {
+      get: {
+        tags: ['Activity Feedback'],
+        summary: 'Get feedback form data for a completed activity',
+        security: [{ BearerAuth: [] }],
+        parameters: [
+          {
+            name: 'activityId',
+            in: 'path',
+            required: true,
+            schema: { type: 'string' },
+          },
+        ],
+        responses: {
+          '200': { description: 'Feedback form data returned' },
+          '400': { description: 'Activity is not completed yet' },
+          '403': { description: 'Only activity participants can submit feedback' },
+          '404': { description: 'Activity not found' },
+        },
+      },
+    },
+    '/api/activity/{activityId}/feedback': {
+      post: {
+        tags: ['Activity Feedback'],
+        summary: 'Submit anonymous feedback for other participants in a completed activity',
+        security: [{ BearerAuth: [] }],
+        parameters: [
+          {
+            name: 'activityId',
+            in: 'path',
+            required: true,
+            schema: { type: 'string' },
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  feedback: {
+                    type: 'array',
+                    items: { $ref: '#/components/schemas/FeedbackEntryInput' },
+                  },
+                },
+                required: ['feedback'],
+              },
+            },
+          },
+        },
+        responses: {
+          '200': {
+            description: 'Feedback submitted',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    message: { type: 'string' },
+                    feedbackStatus: { $ref: '#/components/schemas/FeedbackStatus' },
+                  },
+                },
+              },
+            },
+          },
+          '400': { description: 'Invalid feedback payload' },
+          '403': { description: 'Only activity participants can submit feedback' },
+          '404': { description: 'Activity not found' },
+        },
       },
     },
     '/api/activity/chat/{activityId}/participants': {
@@ -811,6 +953,41 @@ const swaggerSpec = {
           },
         },
         responses: { '200': { description: 'Sports returned' } },
+      },
+    },
+    '/api/user/profile-summary': {
+      get: {
+        tags: ['User'],
+        summary: 'Get current user profile summary and feedback aggregates',
+        security: [{ BearerAuth: [] }],
+        responses: {
+          '200': {
+            description: 'Profile summary returned',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    user: {
+                      type: 'object',
+                      properties: {
+                        id: { type: 'object', additionalProperties: true },
+                        name: { type: 'string' },
+                        email: { type: 'string' },
+                        phone: { type: 'string' },
+                        role: { type: 'string' },
+                        joinedOn: { type: 'string', format: 'date-time' },
+                        karmaPoints: { type: 'number' },
+                        feedbackProfile: { $ref: '#/components/schemas/UserFeedbackProfile' },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          '404': { description: 'User not found' },
+        },
       },
     },
   },

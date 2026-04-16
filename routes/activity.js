@@ -12,6 +12,11 @@ const { publishSync } = require('../events/eventBus');
 const { ACTIVITY_COMPLETED_TOPIC } = require('../events/topics');
 const { parseActivityDateTime } = require('../utils/activityTime');
 const { completeOverdueActivities } = require('../services/activityAutoCompletion');
+const {
+  FEEDBACK_SCORE_VALUES,
+  FEEDBACK_SKILL_LEVELS,
+  recalculateUserFeedbackProfile
+} = require('../services/playerFeedback');
 
 const MAX_CHAT_MESSAGE_LENGTH = 1000;
 const CHAT_TYPING_TTL_MS = 5000;
@@ -46,14 +51,94 @@ const chatImageUpload = multer({
 const typingByActivity = new Map();
 
 const toIdString = (value) => value?.toString?.() || String(value);
+const extractIdString = (value) => {
+  if (value && typeof value === 'object' && value._id) {
+    return toIdString(value._id);
+  }
+  return toIdString(value);
+};
+
+const decryptEncryptedId = (value) => {
+  if (!value) return null;
+  if (typeof value === 'string') return value;
+  if (typeof value === 'object' && value.iv && value.content && value.tag) {
+    return decrypt(value);
+  }
+  return null;
+};
+
+const getUniqueParticipantIds = (activity) => Array.from(
+  new Set([extractIdString(activity.hostId), ...(activity.joinedPlayers || []).map((playerId) => extractIdString(playerId))])
+);
 
 const isActivityParticipant = (activity, userId) => {
   const normalizedUserId = toIdString(userId);
-  const isHost = toIdString(activity.hostId) === normalizedUserId;
+  const isHost = extractIdString(activity.hostId) === normalizedUserId;
   const hasJoined = (activity.joinedPlayers || []).some(
-    (playerId) => toIdString(playerId) === normalizedUserId
+    (playerId) => extractIdString(playerId) === normalizedUserId
   );
   return isHost || hasJoined;
+};
+
+const buildFeedbackStatusForUser = (activity, currentUserId) => {
+  const participantIds = getUniqueParticipantIds(activity).filter(
+    (participantId) => participantId !== toIdString(currentUserId)
+  );
+  const submittedRecipientIds = new Set(
+    (activity.playerFeedback || [])
+      .filter((entry) => toIdString(entry.raterUserId) === toIdString(currentUserId))
+      .map((entry) => toIdString(entry.recipientUserId))
+  );
+
+  return {
+    canSubmit: activity.status === 'Completed' && participantIds.length > 0,
+    totalRecipients: participantIds.length,
+    submittedCount: participantIds.filter((participantId) => submittedRecipientIds.has(participantId)).length,
+    isComplete: participantIds.length > 0 && participantIds.every((participantId) => submittedRecipientIds.has(participantId))
+  };
+};
+
+const sanitizeFeedbackEntryForResponse = (entry) => ({
+  noShow: Boolean(entry.noShow),
+  punctualStatus: entry.noShow ? null : entry.punctualStatus || null,
+  teamPlayerScore: entry.noShow ? null : entry.teamPlayerScore ?? null,
+  paymentScore: entry.noShow ? null : entry.paymentScore ?? null,
+  skillLevel: entry.noShow ? null : entry.skillLevel || null,
+  updatedAt: entry.updatedAt || entry.createdAt || null
+});
+
+const validateFeedbackPayload = (feedbackItem) => {
+  const noShow = Boolean(feedbackItem.noShow);
+  const punctualStatus = feedbackItem.punctualStatus || null;
+  const teamPlayerScore = feedbackItem.teamPlayerScore ?? null;
+  const paymentScore = feedbackItem.paymentScore ?? null;
+  const skillLevel = feedbackItem.skillLevel || null;
+
+  if (noShow) {
+    if (punctualStatus || teamPlayerScore !== null || paymentScore !== null || skillLevel) {
+      return 'No-show feedback cannot include punctuality, team player, payment, or skill level ratings';
+    }
+
+    return null;
+  }
+
+  if (!['Punctual', 'Late'].includes(punctualStatus)) {
+    return 'Punctual status must be either Punctual or Late';
+  }
+
+  if (!FEEDBACK_SCORE_VALUES.includes(teamPlayerScore)) {
+    return 'Team player rating must be one of -2, -1, 1, or 2';
+  }
+
+  if (!FEEDBACK_SCORE_VALUES.includes(paymentScore)) {
+    return 'Payment rating must be one of -2, -1, 1, or 2';
+  }
+
+  if (!FEEDBACK_SKILL_LEVELS.includes(skillLevel)) {
+    return 'Skill level must be Beginner, Amateur, Intermediate, Advanced, or Professional';
+  }
+
+  return null;
 };
 
 const serializeChatMessage = (chatMessage, currentUserId) => {
@@ -208,6 +293,7 @@ router.get('/allActivities', async (req, res) => {
 
       return {
         ...rest,
+        feedbackStatus: buildFeedbackStatusForUser(activityObj, userIdDecrypted),
         // Encrypt activity-level sensitive fields
         joinedPlayers: activityObj.joinedPlayers.map(id =>
           encrypt(id.toString())
@@ -477,6 +563,163 @@ router.post('/userActivities', async (req, res) => {
   }
 });
 
+router.get('/:activityId/feedback-form', async (req, res) => {
+  try {
+    const { activityId } = req.params;
+    const currentUserId = req.user._id;
+
+    const activity = await Activity.findById(activityId)
+      .select('_id sport date fromTime toTime status hostId joinedPlayers playerFeedback');
+
+    if (!activity) {
+      return res.status(404).json({ message: 'Activity not found' });
+    }
+
+    if (!isActivityParticipant(activity, currentUserId)) {
+      return res.status(403).json({ message: 'Only activity participants can submit feedback' });
+    }
+
+    if (activity.status !== 'Completed') {
+      return res.status(400).json({ message: 'Feedback can only be submitted for completed activities' });
+    }
+
+    const participantIds = getUniqueParticipantIds(activity);
+    const users = await User.find({ _id: { $in: participantIds } })
+      .select('name')
+      .lean();
+
+    const usersById = new Map(users.map((user) => [toIdString(user._id), user]));
+    const existingFeedbackByRecipientId = new Map(
+      (activity.playerFeedback || [])
+        .filter((entry) => toIdString(entry.raterUserId) === toIdString(currentUserId))
+        .map((entry) => [toIdString(entry.recipientUserId), sanitizeFeedbackEntryForResponse(entry)])
+    );
+
+    const participants = participantIds
+      .filter((participantId) => participantId !== toIdString(currentUserId))
+      .map((participantId) => ({
+        id: encrypt(participantId),
+        name: usersById.get(participantId)?.name || 'Unknown User',
+        isHost: participantId === toIdString(activity.hostId),
+        existingFeedback: existingFeedbackByRecipientId.get(participantId) || null
+      }));
+
+    return res.status(200).json({
+      activity: {
+        _id: activity._id,
+        sport: activity.sport,
+        date: activity.date,
+        fromTime: activity.fromTime,
+        toTime: activity.toTime,
+        feedbackStatus: buildFeedbackStatusForUser(activity, currentUserId)
+      },
+      participants
+    });
+  } catch (error) {
+    console.error('Error fetching feedback form:', error);
+    return res.status(500).json({ message: 'Failed to fetch feedback form data' });
+  }
+});
+
+router.post('/:activityId/feedback', async (req, res) => {
+  try {
+    const { activityId } = req.params;
+    const currentUserId = req.user._id;
+    const feedbackItems = Array.isArray(req.body?.feedback) ? req.body.feedback : [];
+
+    if (!feedbackItems.length) {
+      return res.status(400).json({ message: 'At least one feedback entry is required' });
+    }
+
+    const activity = await Activity.findById(activityId)
+      .select('_id status hostId joinedPlayers playerFeedback');
+
+    if (!activity) {
+      return res.status(404).json({ message: 'Activity not found' });
+    }
+
+    if (!isActivityParticipant(activity, currentUserId)) {
+      return res.status(403).json({ message: 'Only activity participants can submit feedback' });
+    }
+
+    if (activity.status !== 'Completed') {
+      return res.status(400).json({ message: 'Feedback can only be submitted for completed activities' });
+    }
+
+    const participantIds = new Set(getUniqueParticipantIds(activity));
+    const seenRecipientIds = new Set();
+    const touchedRecipientIds = new Set();
+
+    for (const feedbackItem of feedbackItems) {
+      const recipientUserId = decryptEncryptedId(feedbackItem.recipientId);
+      if (!recipientUserId) {
+        return res.status(400).json({ message: 'Each feedback entry must include a valid recipientId' });
+      }
+
+      if (recipientUserId === toIdString(currentUserId)) {
+        return res.status(400).json({ message: 'You cannot submit feedback for yourself' });
+      }
+
+      if (!participantIds.has(recipientUserId)) {
+        return res.status(400).json({ message: 'Feedback can only be submitted for activity participants' });
+      }
+
+      if (seenRecipientIds.has(recipientUserId)) {
+        return res.status(400).json({ message: 'Duplicate feedback entries for the same participant are not allowed' });
+      }
+      seenRecipientIds.add(recipientUserId);
+
+      const validationError = validateFeedbackPayload(feedbackItem);
+      if (validationError) {
+        return res.status(400).json({ message: validationError });
+      }
+
+      const normalizedFeedback = {
+        recipientUserId,
+        raterUserId: currentUserId,
+        noShow: Boolean(feedbackItem.noShow),
+        punctualStatus: feedbackItem.noShow ? null : feedbackItem.punctualStatus,
+        teamPlayerScore: feedbackItem.noShow ? null : feedbackItem.teamPlayerScore,
+        paymentScore: feedbackItem.noShow ? null : feedbackItem.paymentScore,
+        skillLevel: feedbackItem.noShow ? null : feedbackItem.skillLevel,
+        updatedAt: new Date()
+      };
+
+      const existingIndex = activity.playerFeedback.findIndex(
+        (entry) => toIdString(entry.raterUserId) === toIdString(currentUserId)
+          && toIdString(entry.recipientUserId) === recipientUserId
+      );
+
+      if (existingIndex >= 0) {
+        activity.playerFeedback[existingIndex].noShow = normalizedFeedback.noShow;
+        activity.playerFeedback[existingIndex].punctualStatus = normalizedFeedback.punctualStatus;
+        activity.playerFeedback[existingIndex].teamPlayerScore = normalizedFeedback.teamPlayerScore;
+        activity.playerFeedback[existingIndex].paymentScore = normalizedFeedback.paymentScore;
+        activity.playerFeedback[existingIndex].skillLevel = normalizedFeedback.skillLevel;
+        activity.playerFeedback[existingIndex].updatedAt = normalizedFeedback.updatedAt;
+      } else {
+        activity.playerFeedback.push({
+          ...normalizedFeedback,
+          createdAt: new Date()
+        });
+      }
+
+      touchedRecipientIds.add(recipientUserId);
+    }
+
+    await activity.save();
+    await Promise.all(Array.from(touchedRecipientIds).map((recipientId) => recalculateUserFeedbackProfile(recipientId)));
+
+    return res.status(200).json({
+      message: 'Feedback submitted successfully',
+      feedbackStatus: buildFeedbackStatusForUser(activity, currentUserId)
+    });
+  } catch (error) {
+    console.error('Error submitting feedback:', error);
+    return res.status(500).json({ message: 'Failed to submit feedback' });
+  }
+});
+
 // Get chat participants for an activity
 router.get('/chat/:activityId/participants', async (req, res) => {
   try {
@@ -511,7 +754,7 @@ router.get('/chat/:activityId/participants', async (req, res) => {
           id: encrypt(participantId),
           name: participant.name,
           email: participant.email,
-          isHost: participantId === toIdString(activity.hostId)
+            isHost: participantId === extractIdString(activity.hostId)
         };
       })
       .filter(Boolean);
