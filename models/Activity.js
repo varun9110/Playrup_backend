@@ -24,9 +24,9 @@ const activitySchema = new mongoose.Schema({
   academyId: { type: mongoose.Schema.Types.ObjectId, ref: 'Academy' },
   academy: { type: String },
   address: { type: String },
-  date: { type: String, required: true }, // YYYY-MM-DD
-  fromTime: { type: String, required: true }, // HH:mm
-  toTime: { type: String, required: true },   // HH:mm
+  date: { type: String, required: true }, // Activity start date (YYYY-MM-DD)
+  fromTime: { type: String, required: true }, // Full datetime (ISO)
+  toTime: { type: String, required: true },   // Full datetime (ISO)
   courtNumber: { type: Number },
   skillLevel: { type: String },
   maxPlayers: { type: Number, required: true },

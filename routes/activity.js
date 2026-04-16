@@ -10,7 +10,7 @@ const ActivityChatMessage = require('../models/ActivityChatMessage');
 const { encrypt, decrypt } = require('../utils/helperFunctions');
 const { publishSync } = require('../events/eventBus');
 const { ACTIVITY_COMPLETED_TOPIC } = require('../events/topics');
-const { parseActivityDateTime } = require('../utils/activityTime');
+const { parseActivityDateTime, buildActivityDateTimes } = require('../utils/activityTime');
 const { completeOverdueActivities } = require('../services/activityAutoCompletion');
 const { createNotification } = require('../services/notificationService');
 const {
@@ -244,6 +244,11 @@ router.post('/createActivity', async (req, res) => {
       return res.status(400).json({ message: 'Missing required fields' });
     }
 
+    const { startDateTime, endDateTime } = buildActivityDateTimes(date, fromTime, toTime);
+    if (!startDateTime || !endDateTime) {
+      return res.status(400).json({ message: 'Invalid activity date/time values' });
+    }
+
     const newActivity = await Activity.create({
       hostEmail: userEmailDecrypted,
       hostId: userIdDecrypted,
@@ -253,9 +258,9 @@ router.post('/createActivity', async (req, res) => {
       academyId,
       academy,
       address,
-      date,
-      fromTime,
-      toTime,
+      date: startDateTime.toISOString().slice(0, 10),
+      fromTime: startDateTime.toISOString(),
+      toTime: endDateTime.toISOString(),
       courtNumber,
       skillLevel,
       maxPlayers,
@@ -277,17 +282,29 @@ router.get('/allActivities', async (req, res) => {
     await completeOverdueActivities();
     const currentUserId = req.user?._id;
 
-    const today = new Date().toISOString().split('T')[0];
+    const now = new Date();
 
-    const activities = await Activity.find({
-      date: { $gte: today },
+    const activeActivities = await Activity.find({
       status: 'Active'
     })
       .populate({
         path: 'hostId',
         select: 'email name phone role isVerified createdAt' // only send what you need
+      });
+
+    const activities = activeActivities
+      .filter((activity) => {
+        const endDateTime = parseActivityDateTime(activity.toTime) || parseActivityDateTime(activity.date, activity.toTime);
+        return endDateTime ? endDateTime >= now : false;
       })
-      .sort({ date: 1, fromTime: 1 });
+      .sort((a, b) => {
+        const aStartDateTime = parseActivityDateTime(a.fromTime) || parseActivityDateTime(a.date, a.fromTime);
+        const bStartDateTime = parseActivityDateTime(b.fromTime) || parseActivityDateTime(b.date, b.fromTime);
+
+        const aTime = aStartDateTime ? aStartDateTime.getTime() : 0;
+        const bTime = bStartDateTime ? bStartDateTime.getTime() : 0;
+        return aTime - bTime;
+      });
 
     const activitiesWithEncryptedData = activities.map(activity => {
       const activityObj = activity.toObject();
@@ -447,7 +464,7 @@ router.post('/completeActivity', async (req, res) => {
       });
     }
 
-    const activityEndDateTime = parseActivityDateTime(activity.date, activity.toTime);
+    const activityEndDateTime = parseActivityDateTime(activity.toTime) || parseActivityDateTime(activity.date, activity.toTime);
     if (activityEndDateTime && activityEndDateTime > new Date()) {
       return res.status(400).json({ message: 'Activity can only be completed after end time' });
     }
@@ -564,8 +581,8 @@ router.post('/userActivities', async (req, res) => {
     });
 
     activities.sort((a, b) => {
-      const aStartDateTime = parseActivityDateTime(a.date, a.fromTime);
-      const bStartDateTime = parseActivityDateTime(b.date, b.fromTime);
+      const aStartDateTime = parseActivityDateTime(a.fromTime) || parseActivityDateTime(a.date, a.fromTime);
+      const bStartDateTime = parseActivityDateTime(b.fromTime) || parseActivityDateTime(b.date, b.fromTime);
 
       const aTime = aStartDateTime ? aStartDateTime.getTime() : 0;
       const bTime = bStartDateTime ? bStartDateTime.getTime() : 0;

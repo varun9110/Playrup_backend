@@ -57,7 +57,7 @@ const runActivityReminderTick = async (now) => {
   }).select('_id sport location date fromTime joinedPlayers hostId');
 
   for (const activity of activities) {
-    const activityStart = parseActivityDateTime(activity.date, activity.fromTime);
+    const activityStart = parseActivityDateTime(activity.fromTime) || parseActivityDateTime(activity.date, activity.fromTime);
     if (!isWithinReminderWindow(activityStart, now)) {
       continue;
     }

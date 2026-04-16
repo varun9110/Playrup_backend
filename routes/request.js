@@ -12,6 +12,9 @@ const e = require('express');
 const getActivityEndDateTime = (activity) => {
   if (!activity) return null;
 
+  const endDateTime = parseActivityDateTime(activity.toTime);
+  if (endDateTime) return endDateTime;
+
   const dateValue = typeof activity.date === 'string' ? activity.date.split('T')[0] : activity.date;
   const endTime = activity.toTime || activity.fromTime;
   return parseActivityDateTime(dateValue, endTime);

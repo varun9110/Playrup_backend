@@ -1,5 +1,20 @@
 const parseActivityDateTime = (dateStr, timeStr) => {
+  if (dateStr && !timeStr) {
+    const standalone = new Date(dateStr);
+    return Number.isNaN(standalone.getTime()) ? null : standalone;
+  }
+
   if (!dateStr || !timeStr) return null;
+
+  const normalizedTimeInput = String(timeStr).trim();
+
+  // When time already contains full datetime, trust it directly.
+  if (normalizedTimeInput.includes('T')) {
+    const fullDate = new Date(normalizedTimeInput);
+    if (!Number.isNaN(fullDate.getTime())) {
+      return fullDate;
+    }
+  }
 
   const normalizedDate = String(dateStr).split('T')[0].trim();
   const dateMatch = normalizedDate.match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -9,8 +24,7 @@ const parseActivityDateTime = (dateStr, timeStr) => {
   const month = Number(dateMatch[2]);
   const day = Number(dateMatch[3]);
 
-  const normalizedTime = String(timeStr).trim();
-  const amPmMatch = normalizedTime.match(/^(\d{1,2}):(\d{2})\s*([AaPp][Mm])$/);
+  const amPmMatch = normalizedTimeInput.match(/^(\d{1,2}):(\d{2})\s*([AaPp][Mm])$/);
 
   let hours;
   let minutes;
@@ -27,7 +41,7 @@ const parseActivityDateTime = (dateStr, timeStr) => {
       hours = 0;
     }
   } else {
-    const twentyFourHourMatch = normalizedTime.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+    const twentyFourHourMatch = normalizedTimeInput.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
     if (!twentyFourHourMatch) return null;
 
     hours = Number(twentyFourHourMatch[1]);
@@ -44,6 +58,26 @@ const parseActivityDateTime = (dateStr, timeStr) => {
   return new Date(Date.UTC(year, month - 1, day, hours, minutes, 0, 0));
 };
 
+const buildActivityDateTimes = (dateStr, fromTime, toTime) => {
+  const startDateTime = parseActivityDateTime(dateStr, fromTime);
+  const endDateTime = parseActivityDateTime(dateStr, toTime);
+
+  if (!startDateTime || !endDateTime) {
+    return { startDateTime, endDateTime };
+  }
+
+  const normalizedEndDateTime = new Date(endDateTime);
+  if (normalizedEndDateTime.getTime() <= startDateTime.getTime()) {
+    normalizedEndDateTime.setUTCDate(normalizedEndDateTime.getUTCDate() + 1);
+  }
+
+  return {
+    startDateTime,
+    endDateTime: normalizedEndDateTime
+  };
+};
+
 module.exports = {
-  parseActivityDateTime
+  parseActivityDateTime,
+  buildActivityDateTimes
 };

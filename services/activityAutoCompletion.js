@@ -10,15 +10,13 @@ let isRunning = false;
 
 const completeOverdueActivities = async () => {
   const now = new Date();
-  const today = now.toISOString().split('T')[0];
 
   const activeActivities = await Activity.find({
-    status: 'Active',
-    date: { $lte: today }
+    status: 'Active'
   }).select('_id date toTime');
 
   for (const activity of activeActivities) {
-    const activityEndDateTime = parseActivityDateTime(activity.date, activity.toTime);
+    const activityEndDateTime = parseActivityDateTime(activity.toTime) || parseActivityDateTime(activity.date, activity.toTime);
     if (!activityEndDateTime || activityEndDateTime > now) {
       continue;
     }
