@@ -14,6 +14,18 @@ const {
   encrypt
 } = require('../utils/helperFunctions');
 
+const isRequestedRangeUnavailable = (slotPrices = [], startMinutes, endMinutes) => {
+  for (const slot of slotPrices) {
+    if (!slot?.unavailable) continue;
+    const slotStart = timeToMinutes(slot.time);
+    const slotEnd = slotStart + 60;
+    if (isTimeOverlap(startMinutes, endMinutes, slotStart, slotEnd)) {
+      return true;
+    }
+  }
+  return false;
+};
+
 // CREATE BOOKING
 router.post('/create', async (req, res) => {
   const { userEmail, userId, academyId, sport, courtNumber, date, startTime, duration } = req.body;
@@ -54,6 +66,10 @@ router.post('/create', async (req, res) => {
     const courtPricing = sportData.pricing.find(p => p.courtNumber === courtNumber);
     if (!courtPricing) {
       return res.status(404).json({ message: 'Court pricing not found' });
+    }
+
+    if (isRequestedRangeUnavailable(courtPricing.prices, requestedStart, requestedEnd)) {
+      return res.status(400).json({ message: 'Selected slot is marked unavailable by academy' });
     }
 
     const price = calculatePrice(courtPricing.prices, startTime, duration);
@@ -180,7 +196,11 @@ router.post('/check-availability', async (req, res) => {
       if (available) {
         const courtPricing = sportData.pricing.find(p => p.courtNumber === i);
         if (courtPricing) {
-          price = calculatePrice(courtPricing.prices, startTime, duration);
+          if (isRequestedRangeUnavailable(courtPricing.prices, requestedStart, requestedEnd)) {
+            available = false;
+          } else {
+            price = calculatePrice(courtPricing.prices, startTime, duration);
+          }
         }
       }
 
@@ -355,6 +375,10 @@ router.patch('/modify-booking', async (req, res) => {
     // Calculate new price
     const courtPricing = sportData.pricing.find(p => p.courtNumber === courtNumber);
     if (!courtPricing) return res.status(404).json({ message: 'Court pricing not found' });
+
+    if (isRequestedRangeUnavailable(courtPricing.prices, requestedStart, requestedEnd)) {
+      return res.status(400).json({ message: 'Selected slot is marked unavailable by academy' });
+    }
 
     const price = calculatePrice(courtPricing.prices, startTime, duration);
 

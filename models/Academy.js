@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 
 const pricingSchema = new mongoose.Schema({
   courtNumber: Number,
-  prices: [{ time: String, price: Number }]
+  prices: [{ time: String, price: Number, unavailable: { type: Boolean, default: false } }]
 }, { timestamps: true });
 
 const sportSchema = new mongoose.Schema({
