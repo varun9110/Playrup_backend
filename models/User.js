@@ -38,10 +38,10 @@ const feedbackProfileSchema = new mongoose.Schema({
 
 const gameStatSchema = new mongoose.Schema({
   gameName: { type: String, required: true },
-  selfRating: { type: Number, default: 0 },        // user's rating for this game
-  otherPlayerRating: { type: Number, default: 0 }, // rating received from other players
-  last5Ratings: [{ type: Number }],               // last 5 game ratings
-  totalGamesPlayed: { type: Number, default: 0 }, // total games played
+  selfRating: { type: Number, default: 0 },
+  otherPlayerRating: { type: Number, default: 0 },
+  last5Ratings: [{ type: Number }],
+  totalGamesPlayed: { type: Number, default: 0 }
 }, { _id: false });
 
 const userSchema = new mongoose.Schema({
@@ -56,7 +56,8 @@ const userSchema = new mongoose.Schema({
   token: String,
   tokenExpiry: Date,
   karmaPoints: { type: Number, default: 0 },
-  games: [gameStatSchema], // Array of games with stats
+  playPals: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+  games: [gameStatSchema],
   feedbackProfile: { type: feedbackProfileSchema, default: () => ({}) }
 }, { timestamps: true });
 

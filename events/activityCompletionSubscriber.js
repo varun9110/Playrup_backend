@@ -55,6 +55,31 @@ const distributeKarmaOnActivityCompletion = async (_topic, payload) => {
 
       await User.bulkWrite(karmaUpdates);
 
+      // Add all newly-played users as play pals for each participant.
+      const playPalsUpdates = joinedPlayerIds
+        .map((playerId) => {
+          const otherParticipants = joinedPlayerIds.filter((id) => id !== playerId);
+          if (!otherParticipants.length) {
+            return null;
+          }
+
+          return {
+            updateOne: {
+              filter: { _id: playerId },
+              update: {
+                $addToSet: {
+                  playPals: { $each: otherParticipants }
+                }
+              }
+            }
+          };
+        })
+        .filter(Boolean);
+
+      if (playPalsUpdates.length) {
+        await User.bulkWrite(playPalsUpdates);
+      }
+
       for (const participantId of joinedPlayerIds) {
         await createNotification({
           recipientUserId: participantId,

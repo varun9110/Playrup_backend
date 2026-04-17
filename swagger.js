@@ -109,6 +109,50 @@ const swaggerSpec = {
           lastFeedbackAt: { type: 'string', format: 'date-time', nullable: true },
         },
       },
+      UserPlayPal: {
+        type: 'object',
+        properties: {
+          id: { type: 'object', additionalProperties: true },
+          name: { type: 'string' },
+          email: { type: 'string' },
+        },
+      },
+      SportActivityRating: {
+        type: 'object',
+        properties: {
+          activityId: { type: 'object', additionalProperties: true },
+          playedAt: { type: 'string', format: 'date-time', nullable: true },
+          ratingScore: { type: 'number' },
+          ratingLabel: { type: 'string' },
+        },
+      },
+      UserSportRatingSummary: {
+        type: 'object',
+        properties: {
+          sportName: { type: 'string' },
+          selfRating: {
+            type: 'object',
+            properties: {
+              score: { type: 'number' },
+              label: { type: 'string' },
+            },
+          },
+          receivedRatingComparison: {
+            type: 'object',
+            properties: {
+              averageScore: { type: 'number' },
+              averageLabel: { type: 'string' },
+              basedOnRatings: { type: 'integer' },
+              last5ActivitiesAverageScore: { type: 'number' },
+              last5ActivitiesAverageLabel: { type: 'string' },
+            },
+          },
+          recentActivityRatings: {
+            type: 'array',
+            items: { $ref: '#/components/schemas/SportActivityRating' },
+          },
+        },
+      },
       GenericRequest: {
         type: 'object',
         additionalProperties: true,
@@ -1102,7 +1146,7 @@ const swaggerSpec = {
     '/api/user/all-sports': {
       post: {
         tags: ['User'],
-        summary: 'Get all sports',
+        summary: 'Get all sports (legacy endpoint)',
         requestBody: {
           required: true,
           content: {
@@ -1114,10 +1158,122 @@ const swaggerSpec = {
         responses: { '200': { description: 'Sports returned' } },
       },
     },
+    '/api/user/sports': {
+      get: {
+        tags: ['User'],
+        summary: 'Get available sports list',
+        security: [{ BearerAuth: [] }],
+        responses: {
+          '200': { description: 'Sports returned' },
+        },
+      },
+    },
+    '/api/user/playpals': {
+      get: {
+        tags: ['User'],
+        summary: 'Get current user play pals',
+        security: [{ BearerAuth: [] }],
+        responses: {
+          '200': {
+            description: 'Play pals returned',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    playPals: {
+                      type: 'array',
+                      items: { $ref: '#/components/schemas/UserPlayPal' },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    '/api/user/games': {
+      post: {
+        tags: ['User'],
+        summary: 'Add sport to current user games list',
+        security: [{ BearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  gameName: { type: 'string' },
+                },
+                required: ['gameName'],
+              },
+            },
+          },
+        },
+        responses: {
+          '200': { description: 'Sport added or already exists' },
+          '400': { description: 'Invalid sport value' },
+        },
+      },
+      delete: {
+        tags: ['User'],
+        summary: 'Remove sport from current user games list',
+        security: [{ BearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  gameName: { type: 'string' },
+                },
+                required: ['gameName'],
+              },
+            },
+          },
+        },
+        responses: {
+          '200': { description: 'Sport removed' },
+          '404': { description: 'Sport not found in user list' },
+        },
+      },
+    },
+    '/api/user/games/self-rating': {
+      patch: {
+        tags: ['User'],
+        summary: 'Update self rating for a sport in user games list',
+        security: [{ BearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  gameName: { type: 'string' },
+                  selfRating: {
+                    type: 'string',
+                    enum: ['Beginner', 'Amateur', 'Intermediate', 'Advanced', 'Professional'],
+                  },
+                },
+                required: ['gameName', 'selfRating'],
+              },
+            },
+          },
+        },
+        responses: {
+          '200': { description: 'Self rating updated' },
+          '404': { description: 'Sport not found in user list' },
+        },
+      },
+    },
     '/api/user/profile-summary': {
       get: {
         tags: ['User'],
-        summary: 'Get current user profile summary and feedback aggregates',
+        summary: 'Get current user profile summary including play pals and sport ratings',
         security: [{ BearerAuth: [] }],
         responses: {
           '200': {
@@ -1138,6 +1294,18 @@ const swaggerSpec = {
                         joinedOn: { type: 'string', format: 'date-time' },
                         karmaPoints: { type: 'number' },
                         feedbackProfile: { $ref: '#/components/schemas/UserFeedbackProfile' },
+                        playPals: {
+                          type: 'array',
+                          items: { $ref: '#/components/schemas/UserPlayPal' },
+                        },
+                        availableSports: {
+                          type: 'array',
+                          items: { type: 'string' },
+                        },
+                        sportRatings: {
+                          type: 'array',
+                          items: { $ref: '#/components/schemas/UserSportRatingSummary' },
+                        },
                       },
                     },
                   },
