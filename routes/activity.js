@@ -624,6 +624,101 @@ router.post('/userActivities', async (req, res) => {
   }
 });
 
+// Get single activity details for edit page
+router.get('/:activityId', async (req, res) => {
+  try {
+    const { activityId } = req.params;
+    const activity = await Activity.findById(activityId);
+
+    if (!activity) {
+      return res.status(404).json({ message: 'Activity not found' });
+    }
+
+    const activityObj = activity.toObject();
+    return res.status(200).json({
+      activity: {
+        ...activityObj,
+        hostEmail: encrypt(activityObj.hostEmail),
+        hostId: encrypt(activityObj.hostId.toString()),
+        joinedPlayers: (activityObj.joinedPlayers || []).map((id) => encrypt(id.toString())),
+        pendingRequests: (activityObj.pendingRequests || []).map((id) => encrypt(id.toString())),
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching activity by id:', error);
+    return res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Update hosted activity details
+router.put('/updateActivity/:activityId', async (req, res) => {
+  try {
+    const { activityId } = req.params;
+    const {
+      hostEmail,
+      hostId,
+      city,
+      location,
+      sport,
+      academyId,
+      address,
+      date,
+      fromTime,
+      toTime,
+      courtNumber,
+      skillLevel,
+      maxPlayers,
+      pricePerParticipant
+    } = req.body;
+
+    if (!hostEmail || !hostId || !sport || !date || !fromTime || !toTime || !maxPlayers) {
+      return res.status(400).json({ message: 'Missing required fields' });
+    }
+
+    const userEmailDecrypted = decrypt(hostEmail);
+    const userIdDecrypted = decrypt(hostId);
+
+    const activity = await Activity.findOne({
+      _id: activityId,
+      hostEmail: userEmailDecrypted,
+      hostId: userIdDecrypted,
+    });
+
+    if (!activity) {
+      return res.status(404).json({ message: 'Activity not found or you are not the host' });
+    }
+
+    const { startDateTime, endDateTime } = buildActivityDateTimes(date, fromTime, toTime);
+    if (!startDateTime || !endDateTime) {
+      return res.status(400).json({ message: 'Invalid activity date/time values' });
+    }
+
+    activity.city = city || location || activity.city;
+    activity.location = location || city || activity.location;
+    activity.sport = sport;
+    activity.academyId = academyId || activity.academyId;
+    activity.address = address || activity.address;
+    activity.date = startDateTime.toISOString().slice(0, 10);
+    activity.fromTime = startDateTime.toISOString();
+    activity.toTime = endDateTime.toISOString();
+    activity.courtNumber = courtNumber || activity.courtNumber;
+    activity.skillLevel = skillLevel || activity.skillLevel;
+    activity.maxPlayers = maxPlayers;
+    activity.pricePerParticipant = pricePerParticipant || 0;
+
+    await activity.save();
+
+    return res.status(200).json({
+      success: true,
+      message: 'Activity updated successfully',
+      activity
+    });
+  } catch (error) {
+    console.error('Error updating activity:', error);
+    return res.status(500).json({ message: 'Server error' });
+  }
+});
+
 router.get('/:activityId/feedback-form', async (req, res) => {
   try {
     const { activityId } = req.params;
