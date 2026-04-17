@@ -455,6 +455,25 @@ const swaggerSpec = {
         responses: { '200': { description: 'User activities returned' } },
       },
     },
+    '/api/activity/{activityId}/participants': {
+      get: {
+        tags: ['Activity'],
+        summary: 'Get participants for an activity (host + joined players)',
+        security: [{ BearerAuth: [] }],
+        parameters: [
+          {
+            name: 'activityId',
+            in: 'path',
+            required: true,
+            schema: { type: 'string' },
+          },
+        ],
+        responses: {
+          '200': { description: 'Activity participants returned' },
+          '404': { description: 'Activity not found' },
+        },
+      },
+    },
     '/api/activity/{activityId}/feedback-form': {
       get: {
         tags: ['Activity Feedback'],
@@ -1313,6 +1332,32 @@ const swaggerSpec = {
               },
             },
           },
+          '404': { description: 'User not found' },
+        },
+      },
+    },
+    '/api/user/profile-summary/view': {
+      post: {
+        tags: ['User'],
+        summary: 'Get profile summary for a specific user by encrypted userId',
+        security: [{ BearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  userId: { type: 'object', additionalProperties: true },
+                },
+                required: ['userId'],
+              },
+            },
+          },
+        },
+        responses: {
+          '200': { description: 'Profile summary returned' },
+          '400': { description: 'userId is required' },
           '404': { description: 'User not found' },
         },
       },

@@ -624,6 +624,58 @@ router.post('/userActivities', async (req, res) => {
   }
 });
 
+// Get participants for an activity (host + joined players)
+router.get('/:activityId/participants', async (req, res) => {
+  try {
+    const { activityId } = req.params;
+
+    const activity = await Activity.findById(activityId)
+      .select('_id sport date fromTime toTime hostId joinedPlayers');
+
+    if (!activity) {
+      return res.status(404).json({ message: 'Activity not found' });
+    }
+
+    const uniqueParticipantIds = Array.from(
+      new Set([toIdString(activity.hostId), ...(activity.joinedPlayers || []).map((id) => toIdString(id))])
+    );
+
+    const participants = await User.find({ _id: { $in: uniqueParticipantIds } })
+      .select('name email')
+      .lean();
+
+    const participantById = new Map(participants.map((participant) => [toIdString(participant._id), participant]));
+
+    const orderedParticipants = uniqueParticipantIds
+      .map((participantId) => {
+        const participant = participantById.get(participantId);
+        if (!participant) return null;
+
+        return {
+          id: encrypt(participantId),
+          name: participant.name,
+          email: participant.email,
+          isHost: participantId === extractIdString(activity.hostId)
+        };
+      })
+      .filter(Boolean);
+
+    return res.status(200).json({
+      activity: {
+        _id: activity._id,
+        sport: activity.sport,
+        date: activity.date,
+        fromTime: activity.fromTime,
+        toTime: activity.toTime
+      },
+      participants: orderedParticipants
+    });
+  } catch (error) {
+    console.error('Error fetching activity participants:', error);
+    return res.status(500).json({ message: 'Failed to fetch activity participants' });
+  }
+});
+
 // Get single activity details for edit page
 router.get('/:activityId', async (req, res) => {
   try {

@@ -161,39 +161,82 @@ const getPlayPals = async (userId) => {
   }));
 };
 
+const buildProfileSummary = async (userId) => {
+  const user = await User.findById(userId)
+    .select('name email phone createdAt feedbackProfile karmaPoints role games')
+    .lean();
+
+  if (!user) {
+    return null;
+  }
+
+  const [availableSports, playPals, sportPerformanceMap] = await Promise.all([
+    getUniqueSports(),
+    getPlayPals(user._id),
+    buildSportPerformanceMap(user._id)
+  ]);
+
+  const sportRatings = buildUserSportRatings(user.games || [], sportPerformanceMap);
+
+  return {
+    id: encrypt(user._id.toString()),
+    name: user.name,
+    email: user.email,
+    phone: user.phone,
+    role: user.role,
+    joinedOn: user.createdAt,
+    karmaPoints: user.karmaPoints,
+    feedbackProfile: user.feedbackProfile || createEmptyFeedbackProfile(),
+    playPals,
+    sportRatings,
+    availableSports
+  };
+};
+
+const decryptUserIdForLookup = (value) => {
+  if (!value) return null;
+
+  if (typeof value === 'string') {
+    return value;
+  }
+
+  if (typeof value === 'object' && value.iv && value.content && value.tag) {
+    return decrypt(value);
+  }
+
+  return null;
+};
+
 router.get('/profile-summary', async (req, res) => {
   try {
-    const user = await User.findById(req.user._id)
-      .select('name email phone createdAt feedbackProfile karmaPoints role games')
-      .lean();
+    const userSummary = await buildProfileSummary(req.user._id);
 
-    if (!user) {
+    if (!userSummary) {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    const [availableSports, playPals, sportPerformanceMap] = await Promise.all([
-      getUniqueSports(),
-      getPlayPals(req.user._id),
-      buildSportPerformanceMap(req.user._id)
-    ]);
+    return res.json({ user: userSummary });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
 
-    const sportRatings = buildUserSportRatings(user.games || [], sportPerformanceMap);
+router.post('/profile-summary/view', async (req, res) => {
+  try {
+    const targetUserId = decryptUserIdForLookup(req.body?.userId);
 
-    return res.json({
-      user: {
-        id: encrypt(user._id.toString()),
-        name: user.name,
-        email: user.email,
-        phone: user.phone,
-        role: user.role,
-        joinedOn: user.createdAt,
-        karmaPoints: user.karmaPoints,
-        feedbackProfile: user.feedbackProfile || createEmptyFeedbackProfile(),
-        playPals,
-        sportRatings,
-        availableSports
-      }
-    });
+    if (!targetUserId) {
+      return res.status(400).json({ message: 'userId is required' });
+    }
+
+    const userSummary = await buildProfileSummary(targetUserId);
+
+    if (!userSummary) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    return res.json({ user: userSummary });
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: 'Server error' });
