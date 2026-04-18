@@ -367,27 +367,79 @@ const swaggerSpec = {
     '/api/academy/onboard-academy': {
       post: {
         tags: ['Academy'],
-        summary: 'Onboard a new academy',
+        summary: 'Onboard a new academy under an owner account',
         requestBody: {
           required: true,
           content: {
             'application/json': {
-              schema: { $ref: '#/components/schemas/GenericRequest' },
+              schema: {
+                type: 'object',
+                properties: {
+                  name: { type: 'string' },
+                  email: { type: 'string' },
+                  phone: { type: 'string' },
+                  address: { type: 'string' },
+                  city: { type: 'string' },
+                },
+                required: ['name', 'email', 'phone', 'address', 'city'],
+              },
             },
           },
         },
-        responses: { '200': { description: 'Academy onboarded' } },
+        responses: {
+          '200': { description: 'Academy onboarded and verification link generated' },
+          '403': { description: 'Only superadmin can onboard academies' },
+        },
+      },
+    },
+    '/api/academy/verify-onboarding': {
+      post: {
+        tags: ['Academy'],
+        summary: 'Verify academy onboarding link for owner',
+        security: [{ BearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  token: { type: 'string' },
+                },
+                required: ['token'],
+              },
+            },
+          },
+        },
+        responses: {
+          '200': { description: 'Academy verified successfully' },
+          '400': { description: 'Token missing or expired' },
+          '403': { description: 'Not authorised to verify academy' },
+          '404': { description: 'Invalid token' },
+        },
       },
     },
     '/api/academy/configure': {
       post: {
         tags: ['Academy'],
-        summary: 'Configure academy settings',
+        summary: 'Configure academy settings using academyId or legacy owner email',
         requestBody: {
           required: true,
           content: {
             'application/json': {
-              schema: { $ref: '#/components/schemas/GenericRequest' },
+              schema: {
+                type: 'object',
+                properties: {
+                  academyId: { type: 'string' },
+                  email: { type: 'string', description: 'Legacy encrypted owner email' },
+                  userId: { type: 'string', description: 'Legacy encrypted owner userId' },
+                  sports: {
+                    type: 'array',
+                    items: { type: 'object' },
+                  },
+                },
+                required: ['sports'],
+              },
             },
           },
         },
@@ -397,12 +449,19 @@ const swaggerSpec = {
     '/api/academy/getDetails': {
       post: {
         tags: ['Academy'],
-        summary: 'Get academy details',
+        summary: 'Get academy details by academyId or legacy owner email',
         requestBody: {
           required: true,
           content: {
             'application/json': {
-              schema: { $ref: '#/components/schemas/GenericRequest' },
+              schema: {
+                type: 'object',
+                properties: {
+                  academyId: { type: 'string' },
+                  email: { type: 'string', description: 'Legacy encrypted owner email' },
+                  userId: { type: 'string', description: 'Legacy encrypted owner userId' },
+                },
+              },
             },
           },
         },
@@ -441,7 +500,27 @@ const swaggerSpec = {
     '/api/academy/getCourts': {
       get: {
         tags: ['Academy'],
-        summary: 'Get courts list',
+        summary: 'Get courts list for an academy',
+        parameters: [
+          {
+            name: 'academyId',
+            in: 'query',
+            required: false,
+            schema: { type: 'string' },
+          },
+          {
+            name: 'email',
+            in: 'query',
+            required: false,
+            schema: { type: 'string' },
+          },
+          {
+            name: 'sport',
+            in: 'query',
+            required: true,
+            schema: { type: 'string' },
+          },
+        ],
         responses: { '200': { description: 'Courts returned' } },
       },
     },

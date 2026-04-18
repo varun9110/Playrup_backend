@@ -48,6 +48,81 @@ const toDateKey = (date = new Date()) => {
 
 const toSafeLower = (value) => String(value || '').trim().toLowerCase();
 
+const isAcademyActive = (academy) => !academy?.status || academy.status === 'active';
+
+const findAcademyForOwner = async ({ academyId, email, userId }) => {
+  if (academyId) {
+    const academy = await Academy.findById(academyId);
+    if (!academy) {
+      return null;
+    }
+    if (userId && String(academy.userId) !== String(userId)) {
+      return null;
+    }
+    return academy;
+  }
+
+  if (!email) {
+    return null;
+  }
+
+  const query = {
+    email: String(email).toLowerCase().trim()
+  };
+
+  if (userId) {
+    query.userId = userId;
+  }
+
+  return Academy.findOne(query).sort({ createdAt: 1 });
+};
+
+const getFrontendBaseUrl = () => {
+  return process.env.FRONTEND_URL || process.env.CLIENT_URL || 'http://localhost:5173';
+};
+
+const getAcademyOnboardingLink = (token) => {
+  return `${getFrontendBaseUrl().replace(/\/$/, '')}/academy/onboarding/verify?token=${encodeURIComponent(token)}`;
+};
+
+const createMailTransporter = () => {
+  const host = process.env.SMTP_HOST;
+  const port = Number(process.env.SMTP_PORT || 587);
+  const user = process.env.SMTP_USER;
+  const pass = process.env.SMTP_PASS;
+
+  if (!host || !user || !pass) {
+    return null;
+  }
+
+  return nodemailer.createTransport({
+    host,
+    port,
+    secure: port === 465,
+    auth: { user, pass }
+  });
+};
+
+let academyEmailIndexChecked = false;
+const ensureAcademyEmailIsNonUnique = async () => {
+  if (academyEmailIndexChecked) {
+    return;
+  }
+
+  try {
+    const indexes = await Academy.collection.indexes();
+    const emailIndex = indexes.find((index) => index.key?.email === 1 && index.unique);
+    if (emailIndex?.name) {
+      await Academy.collection.dropIndex(emailIndex.name);
+      console.log(`Dropped legacy unique index on academy email: ${emailIndex.name}`);
+    }
+  } catch (error) {
+    console.warn('Unable to validate academy email index:', error?.message || error);
+  } finally {
+    academyEmailIndexChecked = true;
+  }
+};
+
 const ensureAcademyShareCode = async (academy) => {
   if (academy.shareCode) {
     return academy.shareCode;
@@ -138,6 +213,10 @@ const getAcademyStats = async (academyId) => {
  */
 router.post('/onboard-academy', async (req, res) => {
   try {
+    if (req.user?.role !== 'superadmin') {
+      return res.status(403).json({ message: 'Only superadmin can onboard academies' });
+    }
+
     const {
       name, email, phone, address, city
     } = req.body;
@@ -146,14 +225,29 @@ router.post('/onboard-academy', async (req, res) => {
       return res.status(400).json({ message: 'All fields are required' });
     }
 
-    // Check if academy email already exists
-    const existingUser = await User.findOne({ email: email.toLowerCase() });
-    if (existingUser) {
-      return res.status(400).json({ message: 'Academy email already exists' });
+    const normalizedEmail = email.toLowerCase().trim();
+    const normalizedPhone = phone.trim();
+    const normalizedName = name.toLowerCase().trim();
+
+    await ensureAcademyEmailIsNonUnique();
+
+    const existingUser = await User.findOne({ email: normalizedEmail });
+    if (!existingUser) {
+      const existingPhone = await User.findOne({ phone: normalizedPhone });
+      if (existingPhone) {
+        return res.status(400).json({ message: 'Academy owner phone already exists for another user' });
+      }
     }
-    const existingPhone = await User.findOne({ phone: phone.toLowerCase() });
-    if (existingPhone) {
-      return res.status(400).json({ message: 'Academy phone already exists' });
+
+    const duplicateAcademy = await Academy.findOne({
+      userId: existingUser?._id,
+      name: normalizedName,
+      city: city.toLowerCase().trim(),
+      address: address.toLowerCase().trim()
+    });
+
+    if (duplicateAcademy) {
+      return res.status(400).json({ message: 'An academy with this name and location already exists for this owner' });
     }
 
     const passwordPlain = crypto.randomBytes(6).toString('hex'); // 12-char random password
@@ -164,27 +258,40 @@ router.post('/onboard-academy', async (req, res) => {
       const hashedPassword = await bcrypt.hash(passwordPlain, 10);
       // Create Academy User account
       academyUser = new User({
-        name: name.toLowerCase(),
-        email: email.toLowerCase(),
+        name: normalizedName,
+        email: normalizedEmail,
         password: hashedPassword,
-        phone,
+        phone: normalizedPhone,
         role: 'academy',
         isVerified: true
       });
       await academyUser.save();
+    } else {
+      academyUser = existingUser;
+      if (academyUser.role !== 'academy' && academyUser.role !== 'superadmin') {
+        return res.status(400).json({ message: 'This email belongs to a non-academy account' });
+      }
     }
 
+    const verificationToken = crypto.randomBytes(32).toString('hex');
+    const verificationTokenHash = crypto.createHash('sha256').update(verificationToken).digest('hex');
+    const verificationTokenExpiry = new Date(Date.now() + 72 * 60 * 60 * 1000);
+    const onboardingLink = getAcademyOnboardingLink(verificationToken);
 
 
     // Create Academy document
     const newAcademy = new Academy({
-      name: name.toLowerCase(),
+      name: normalizedName,
       userId: academyUser._id,
-      email: email.toLowerCase(),
-      phone: phone.toLowerCase(),
+      email: normalizedEmail,
+      phone: normalizedPhone,
       address: address.toLowerCase(),
       city: city.toLowerCase(),
-      shareCode: crypto.randomBytes(5).toString('hex')
+      shareCode: crypto.randomBytes(5).toString('hex'),
+      status: 'pending_verification',
+      onboardingVerificationTokenHash: verificationTokenHash,
+      onboardingVerificationTokenExpiry: verificationTokenExpiry,
+      onboardingVerifiedAt: null
     });
     await newAcademy.save();
 
@@ -193,15 +300,20 @@ router.post('/onboard-academy', async (req, res) => {
       // Send email to academy
       mailOptions = {
         from: 'varun.goel.vg@gmail.com',
-        to: email,
-        subject: 'Your Academy Account Credentials',
+        to: normalizedEmail,
+        subject: 'Verify your new academy on PlayC',
         text: `Hello ${capitalizeWords(name)},
 
-              Your academy account has been created.
+              A new academy has been created under your account.
 
-              You can log in with the following credentials:
+              Please verify this academy by opening the secure link below:
+              ${onboardingLink}
 
-              Email: ${email}
+              You must be logged in with this email before verification.
+
+              Login credentials:
+
+              Email: ${normalizedEmail}
               Password: ${passwordPlain}
 
               Please change your password after logging in.
@@ -212,26 +324,91 @@ router.post('/onboard-academy', async (req, res) => {
     } else {
       mailOptions = {
         from: 'varun.goel.vg@gmail.com',
-        to: email,
-        subject: 'Your Academy was created',
+        to: normalizedEmail,
+        subject: 'Verify your newly onboarded academy',
         text: `Hello ${capitalizeWords(name)},
 
-              Your academy account has been created.
+              A new academy has been added under your owner account.
 
-              You can log in with your exisiting username and password.
+              Please verify this academy by opening the secure link below:
+              ${onboardingLink}
+
+              You must be logged in with your existing owner account to complete verification.
 
               Best regards,
               PlayC`
       };
     }
 
-    console.log(mailOptions)
+    const transporter = createMailTransporter();
+    let emailDelivery = 'not-configured';
+    if (transporter) {
+      await transporter.sendMail(mailOptions);
+      emailDelivery = 'sent';
+    }
 
-    res.json({ message: 'Academy onboarded and emailed.', mailOptions, success: true });
+    res.json({
+      message: 'Academy onboarded. Verification email prepared.',
+      success: true,
+      academyId: newAcademy._id,
+      status: newAcademy.status,
+      emailDelivery,
+      onboardingLink
+    });
 
   } catch (error) {
     console.error(error);
+    if (error?.code === 11000) {
+      return res.status(400).json({
+        message: 'Duplicate value detected while onboarding academy',
+        error: error.message
+      });
+    }
     res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+router.post('/verify-onboarding', async (req, res) => {
+  try {
+    if (!req.user?._id) {
+      return res.status(401).json({ success: false, message: 'Authentication required' });
+    }
+
+    const { token } = req.body || {};
+    if (!token || typeof token !== 'string') {
+      return res.status(400).json({ success: false, message: 'Verification token is required' });
+    }
+
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+    const academy = await Academy.findOne({ onboardingVerificationTokenHash: tokenHash });
+
+    if (!academy) {
+      return res.status(404).json({ success: false, message: 'Invalid or already used verification token' });
+    }
+
+    if (String(academy.userId) !== String(req.user._id)) {
+      return res.status(403).json({ success: false, message: 'Not authorized to verify this academy' });
+    }
+
+    if (!academy.onboardingVerificationTokenExpiry || academy.onboardingVerificationTokenExpiry < new Date()) {
+      return res.status(400).json({ success: false, message: 'Verification token has expired' });
+    }
+
+    academy.status = 'active';
+    academy.onboardingVerifiedAt = new Date();
+    academy.onboardingVerificationTokenHash = null;
+    academy.onboardingVerificationTokenExpiry = null;
+    await academy.save();
+
+    return res.status(200).json({
+      success: true,
+      message: 'Academy verified successfully',
+      academyId: academy._id,
+      status: academy.status
+    });
+  } catch (error) {
+    console.error('Error verifying academy onboarding:', error);
+    return res.status(500).json({ success: false, message: 'Server error' });
   }
 });
 
@@ -300,16 +477,23 @@ router.post('/onboard-academy', async (req, res) => {
  *         description: Server error
  */
 router.post('/configure', async (req, res) => {
-  const { email, userId, sports } = req.body;
-
-  const userEmail = decrypt(email);
-  const userIdDecrypted = decrypt(userId);
+  const { email, userId, sports, academyId } = req.body;
 
   try {
-    const academy = await Academy.findOne({ email: userEmail.toLowerCase() });
+    let userEmail = null;
+    let userIdDecrypted = null;
+    if (email) userEmail = decrypt(email);
+    if (userId) userIdDecrypted = decrypt(userId);
+
+    const ownerId = req.user?._id || userIdDecrypted;
+    const academy = await findAcademyForOwner({ academyId, email: userEmail, userId: ownerId });
 
     if (!academy) {
       return res.json({ message: 'Academy could not be found' });
+    }
+
+    if (!isAcademyActive(academy)) {
+      return res.status(403).json({ message: 'Academy is pending verification' });
     }
 
     academy.sports = sports;
@@ -347,15 +531,27 @@ router.post('/configure', async (req, res) => {
  */
 router.post("/getDetails", async (req, res) => {
   const {
-    email, userId
+    email, userId, academyId
   } = req.body;
-
-  const userEmail = decrypt(email);
-  const userIdDecrypted = decrypt(userId);
 
 
   try {
-    const academy = await Academy.findOne({ email: userEmail.toLowerCase() });
+    let userEmail = null;
+    let userIdDecrypted = null;
+    if (email) userEmail = decrypt(email);
+    if (userId) userIdDecrypted = decrypt(userId);
+
+    const ownerId = req.user?._id || userIdDecrypted;
+    const academy = await findAcademyForOwner({ academyId, email: userEmail, userId: ownerId });
+
+    if (!academy) {
+      return res.status(404).json({ error: 'Academy not found', success: false });
+    }
+
+    if (!isAcademyActive(academy)) {
+      return res.status(403).json({ error: 'Academy is pending verification', success: false });
+    }
+
     res.status(200).json({ academy, success: true });
   } catch (err) {
     console.error(err);
@@ -378,8 +574,12 @@ router.post("/getDetails", async (req, res) => {
  */
 router.get("/locations", async (req, res) => {
   try {
-    const cities = await Academy.distinct("city");
+    const activeFilter = { $or: [{ status: 'active' }, { status: { $exists: false } }] };
+    const cities = await Academy.distinct("city", activeFilter);
     const addresses = await Academy.aggregate([
+      {
+        $match: activeFilter
+      },
       {
         $group: {
           _id: { city: "$city", address: "$address" }
@@ -491,7 +691,8 @@ router.get("/getAcademies", async (req, res) => {
 
     const academies = await Academy.find({
       city: city.toLowerCase(),
-      "sports.sportName": sport
+      "sports.sportName": sport,
+      $or: [{ status: 'active' }, { status: { $exists: false } }]
     }).select("name email phone address city sports");
 
     if (!academies.length) {
@@ -547,16 +748,23 @@ router.get("/getAcademies", async (req, res) => {
  */
 router.get("/getCourts", async (req, res) => {
   try {
-    const { email, sport } = req.query;
+    const { email, sport, academyId } = req.query;
 
-    if (!email || !sport) {
+    if ((!email && !academyId) || !sport) {
       return res.status(400).json({
-        message: "Academy email and sport name are required",
+        message: "academyId or academy email and sport name are required",
         success: false
       });
     }
 
-    const academy = await Academy.findOne({ email: email.toLowerCase() });
+    const academyQuery = academyId
+      ? { _id: academyId }
+      : { email: String(email).toLowerCase().trim() };
+
+    const academy = await Academy.findOne({
+      ...academyQuery,
+      $or: [{ status: 'active' }, { status: { $exists: false } }]
+    });
     if (!academy) {
       return res.status(404).json({
         message: "Academy not found",
@@ -591,16 +799,32 @@ router.post('/user-academies', async (req, res) => {
   try {
     const { userId } = req.body;
 
-    if (!userId) {
+    let ownerUserId = req.user?._id ? String(req.user._id) : null;
+
+    if (userId) {
+      if (typeof userId === 'object' && userId.iv && userId.content && userId.tag) {
+        ownerUserId = decrypt(userId);
+      } else if (typeof userId === 'string' && /^[0-9a-fA-F]{24}$/.test(userId)) {
+        ownerUserId = userId;
+      } else {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid userId payload'
+        });
+      }
+    }
+
+    if (!ownerUserId) {
       return res.status(400).json({
         success: false,
         message: 'userId is required'
       });
     }
 
-    const userIdDecrypted = decrypt(userId);
-
-    const academies = await Academy.find({ userId: userIdDecrypted })
+    const academies = await Academy.find({
+      userId: ownerUserId,
+      $or: [{ status: 'active' }, { status: { $exists: false } }]
+    })
       .populate('userId', 'name email phone') // optional
       .sort({ name: -1 });
 
@@ -626,6 +850,10 @@ router.get('/profile/:academyId', async (req, res) => {
 
     if (!academy) {
       return res.status(404).json({ success: false, message: 'Academy not found' });
+    }
+
+    if (!isAcademyActive(academy)) {
+      return res.status(403).json({ success: false, message: 'Academy is pending verification' });
     }
 
     if (String(academy.userId) !== String(req.user?._id)) {
@@ -654,6 +882,10 @@ router.put('/profile/:academyId', async (req, res) => {
 
     if (!academy) {
       return res.status(404).json({ success: false, message: 'Academy not found' });
+    }
+
+    if (!isAcademyActive(academy)) {
+      return res.status(403).json({ success: false, message: 'Academy is pending verification' });
     }
 
     if (String(academy.userId) !== String(req.user?._id)) {
@@ -711,6 +943,10 @@ router.post('/profile/:academyId/photos', academyPhotoUpload.array('photos', 8),
       return res.status(404).json({ success: false, message: 'Academy not found' });
     }
 
+    if (!isAcademyActive(academy)) {
+      return res.status(403).json({ success: false, message: 'Academy is pending verification' });
+    }
+
     if (String(academy.userId) !== String(req.user?._id)) {
       return res.status(403).json({ success: false, message: 'Not authorized to update photos' });
     }
@@ -743,6 +979,10 @@ router.delete('/profile/:academyId/photos', async (req, res) => {
     const academy = await Academy.findById(academyId);
     if (!academy) {
       return res.status(404).json({ success: false, message: 'Academy not found' });
+    }
+
+    if (!isAcademyActive(academy)) {
+      return res.status(403).json({ success: false, message: 'Academy is pending verification' });
     }
 
     if (String(academy.userId) !== String(req.user?._id)) {
