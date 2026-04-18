@@ -32,11 +32,13 @@ async function authenticateToken(req, res, next) {
 
   const isPublicDropInShareRoute =
     req.method === 'GET' && /^\/api\/dropin\/share\/[^/]+$/.test(req.path);
+  const isPublicCoachingShareRoute =
+    req.method === 'GET' && /^\/api\/coaching\/share\/[^/]+$/.test(req.path);
 
   const rawHeader = req.headers.authorization || req.headers['x-access-token'] || req.headers.token;
   const token = rawHeader && rawHeader.startsWith('Bearer ') ? rawHeader.slice(7) : rawHeader;
 
-  if (isPublicDropInShareRoute) {
+  if (isPublicDropInShareRoute || isPublicCoachingShareRoute) {
     // Keep share links publicly accessible while attaching req.user when a valid token is present.
     if (!token) {
       return next();

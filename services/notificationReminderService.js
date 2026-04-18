@@ -1,5 +1,6 @@
 const Booking = require('../models/Booking');
 const Activity = require('../models/Activity');
+const Coaching = require('../models/Coaching');
 const Academy = require('../models/Academy');
 const { parseActivityDateTime } = require('../utils/activityTime');
 const { createNotification } = require('./notificationService');
@@ -86,10 +87,52 @@ const runActivityReminderTick = async (now) => {
   }
 };
 
+const runCoachingReminderTick = async (now) => {
+  const coachingSessions = await Coaching.find({
+    status: 'Active',
+    reminder15Sent: false
+  }).select('_id sport academyId date startTime joinedParticipants');
+
+  for (const session of coachingSessions) {
+    const coachingStart = parseActivityDateTime(session.date, session.startTime);
+    if (!isWithinReminderWindow(coachingStart, now)) {
+      continue;
+    }
+
+    const participantIds = Array.from(
+      new Set((session.joinedParticipants || []).map((id) => id.toString()))
+    );
+
+    const academy = session.academyId
+      ? await Academy.findById(session.academyId).select('name')
+      : null;
+
+    for (const participantId of participantIds) {
+      await createNotification({
+        recipientUserId: participantId,
+        templateKey: 'coaching.reminder.15min.forParticipant',
+        variables: {
+          sport: session.sport,
+          academyName: academy?.name || 'academy',
+          startTime: session.startTime
+        },
+        metadata: {
+          coachingId: session._id,
+          academyId: session.academyId
+        }
+      });
+    }
+
+    session.reminder15Sent = true;
+    await session.save();
+  }
+};
+
 const runReminderTick = async () => {
   const now = new Date();
   await runBookingReminderTick(now);
   await runActivityReminderTick(now);
+  await runCoachingReminderTick(now);
 };
 
 const initNotificationReminderService = () => {

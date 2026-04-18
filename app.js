@@ -14,6 +14,7 @@ const userRoutes = require('./routes/user');
 const notificationRoutes = require('./routes/notification');
 const publicRoutes = require('./routes/public');
 const dropInRoutes = require('./routes/dropIn');
+const coachingRoutes = require('./routes/coaching');
 const { authenticateToken } = require('./middleware/authMiddleware');
 const setupSwagger = require('./swagger');
 const { initActivityCompletionSubscriber } = require('./events/activityCompletionSubscriber');
@@ -47,6 +48,7 @@ app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/user', userRoutes);
 app.use('/api/notification', notificationRoutes);
 app.use('/api/dropin', dropInRoutes);
+app.use('/api/coaching', coachingRoutes);
 
 const mongoURI = process.env.MONGO_URI || 'mongodb://localhost:27017/otp-login-system';
 

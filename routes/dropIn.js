@@ -36,30 +36,48 @@ const ensureShareCode = async (dropIn) => {
  * @returns {string[]}
  */
 const expandDates = (startDate, recurrenceType, recurrenceDays, recurrenceUntil) => {
-  const dates = [startDate];
-  if (recurrenceType === 'none' || !recurrenceUntil) return dates;
+  if (recurrenceType === 'none') return [startDate];
 
-  const until = new Date(recurrenceUntil + 'T12:00:00Z');
-  let cursor = new Date(startDate + 'T12:00:00Z');
+  if (recurrenceType === 'daily') {
+    const dates = [startDate];
+    if (!recurrenceUntil) return dates;
 
-  while (true) {
-    // Advance by one day
-    cursor.setUTCDate(cursor.getUTCDate() + 1);
-    if (cursor > until) break;
+    const until = new Date(recurrenceUntil + 'T12:00:00Z');
+    let cursor = new Date(startDate + 'T12:00:00Z');
 
-    const dayOfWeek = cursor.getUTCDay(); // 0-6
-    const yyyy = cursor.getUTCFullYear();
-    const mm = String(cursor.getUTCMonth() + 1).padStart(2, '0');
-    const dd = String(cursor.getUTCDate()).padStart(2, '0');
-    const dateStr = `${yyyy}-${mm}-${dd}`;
+    while (true) {
+      cursor.setUTCDate(cursor.getUTCDate() + 1);
+      if (cursor > until) break;
 
-    if (recurrenceType === 'daily') {
-      dates.push(dateStr);
-    } else if (recurrenceType === 'weekly') {
-      if (recurrenceDays.includes(dayOfWeek)) {
-        dates.push(dateStr);
-      }
+      const yyyy = cursor.getUTCFullYear();
+      const mm = String(cursor.getUTCMonth() + 1).padStart(2, '0');
+      const dd = String(cursor.getUTCDate()).padStart(2, '0');
+      dates.push(`${yyyy}-${mm}-${dd}`);
     }
+
+    return dates;
+  }
+
+  if (recurrenceType !== 'weekly') return [startDate];
+
+  const validDays = Array.isArray(recurrenceDays)
+    ? recurrenceDays.map((d) => Number(d)).filter((d) => d >= 0 && d <= 6)
+    : [];
+  const until = recurrenceUntil
+    ? new Date(recurrenceUntil + 'T12:00:00Z')
+    : new Date(startDate + 'T12:00:00Z');
+  let cursor = new Date(startDate + 'T12:00:00Z');
+  const dates = [];
+
+  while (cursor <= until) {
+    const dayOfWeek = cursor.getUTCDay();
+    if (validDays.includes(dayOfWeek)) {
+      const yyyy = cursor.getUTCFullYear();
+      const mm = String(cursor.getUTCMonth() + 1).padStart(2, '0');
+      const dd = String(cursor.getUTCDate()).padStart(2, '0');
+      dates.push(`${yyyy}-${mm}-${dd}`);
+    }
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
   }
 
   return dates;

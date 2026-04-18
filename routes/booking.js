@@ -3,6 +3,7 @@ const mongoose = require('mongoose');
 const router = express.Router();
 const Booking = require('../models/Booking');
 const DropIn = require('../models/DropIn');
+const Coaching = require('../models/Coaching');
 const Academy = require('../models/Academy');
 const User = require('../models/User');
 const { createNotification } = require('../services/notificationService');
@@ -71,6 +72,16 @@ router.post('/create', async (req, res) => {
       const diEnd = timeToMinutes(di.endTime);
       if (isTimeOverlap(requestedStart, requestedEnd, diStart, diEnd)) {
         return res.status(400).json({ message: 'Slot is reserved for a Drop-In session' });
+      }
+    }
+
+    // Check for active coaching classes blocking this slot
+    const coachingSessions = await Coaching.find({ academyId, sport, courtNumber, date, status: 'Active' });
+    for (let session of coachingSessions) {
+      const coachingStart = timeToMinutes(session.startTime);
+      const coachingEnd = timeToMinutes(session.endTime);
+      if (isTimeOverlap(requestedStart, requestedEnd, coachingStart, coachingEnd)) {
+        return res.status(400).json({ message: 'Slot is reserved for a Coaching class' });
       }
     }
 
@@ -213,6 +224,19 @@ router.post('/check-availability', async (req, res) => {
           status: 'Active',
         });
         if (dropIns.some(di => isTimeOverlap(requestedStart, requestedEnd, timeToMinutes(di.startTime), timeToMinutes(di.endTime)))) {
+          available = false;
+        }
+      }
+
+      if (available) {
+        const coachingSessions = await Coaching.find({
+          academyId,
+          sport,
+          courtNumber: i,
+          date,
+          status: 'Active',
+        });
+        if (coachingSessions.some(session => isTimeOverlap(requestedStart, requestedEnd, timeToMinutes(session.startTime), timeToMinutes(session.endTime)))) {
           available = false;
         }
       }
@@ -394,6 +418,38 @@ router.patch('/modify-booking', async (req, res) => {
       const bookingEnd = timeToMinutes(b.endTime);
       if (isTimeOverlap(requestedStart, requestedEnd, bookingStart, bookingEnd)) {
         return res.status(400).json({ message: 'Requested slot is already booked' });
+      }
+    }
+
+    const overlappingDropIns = await DropIn.find({
+      academyId,
+      sport,
+      courtNumber,
+      date,
+      status: 'Active'
+    });
+
+    for (let session of overlappingDropIns) {
+      const dropInStart = timeToMinutes(session.startTime);
+      const dropInEnd = timeToMinutes(session.endTime);
+      if (isTimeOverlap(requestedStart, requestedEnd, dropInStart, dropInEnd)) {
+        return res.status(400).json({ message: 'Requested slot is reserved for a Drop-In session' });
+      }
+    }
+
+    const overlappingCoachingSessions = await Coaching.find({
+      academyId,
+      sport,
+      courtNumber,
+      date,
+      status: 'Active'
+    });
+
+    for (let session of overlappingCoachingSessions) {
+      const coachingStart = timeToMinutes(session.startTime);
+      const coachingEnd = timeToMinutes(session.endTime);
+      if (isTimeOverlap(requestedStart, requestedEnd, coachingStart, coachingEnd)) {
+        return res.status(400).json({ message: 'Requested slot is reserved for a Coaching class' });
       }
     }
 

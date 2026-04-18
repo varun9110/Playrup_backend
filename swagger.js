@@ -1740,6 +1740,268 @@ const swaggerSpec = {
         },
       },
     },
+
+    // ─── Coaching ───────────────────────────────────────────────────────────
+    '/api/coaching/create': {
+      post: {
+        tags: ['Coaching'],
+        summary: 'Academy creates one or more coaching classes (with optional recurrence)',
+        security: [{ BearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  academyId: { type: 'string' },
+                  sport: { type: 'string' },
+                  courtNumber: { type: 'integer' },
+                  title: { type: 'string' },
+                  description: { type: 'string' },
+                  skillLevel: { type: 'string' },
+                  coachName: { type: 'string' },
+                  coachBio: { type: 'string' },
+                  coachContact: { type: 'string' },
+                  date: { type: 'string', format: 'date', description: 'First occurrence date (YYYY-MM-DD)' },
+                  startTime: { type: 'string', description: 'HH:MM' },
+                  endTime: { type: 'string', description: 'HH:MM' },
+                  pricePerParticipant: { type: 'number' },
+                  recurrenceType: { type: 'string', enum: ['none', 'daily', 'weekly'], default: 'none' },
+                  recurrenceDays: {
+                    type: 'array',
+                    items: { type: 'integer', minimum: 0, maximum: 6 },
+                    description: 'Days of week (0=Sun … 6=Sat) for weekly recurrence',
+                  },
+                  recurrenceUntil: { type: 'string', format: 'date', description: 'Last date to generate instances (YYYY-MM-DD)' },
+                },
+                required: ['academyId', 'sport', 'courtNumber', 'date', 'startTime', 'endTime'],
+              },
+            },
+          },
+        },
+        responses: {
+          '201': { description: 'Coaching class(es) created' },
+          '400': { description: 'Validation error or slot conflict' },
+          '403': { description: 'Not authorised to manage this academy' },
+          '404': { description: 'Academy or sport not found' },
+        },
+      },
+    },
+    '/api/coaching/academy/{academyId}': {
+      get: {
+        tags: ['Coaching'],
+        summary: 'Get all active coaching classes for an academy (calendar view)',
+        security: [{ BearerAuth: [] }],
+        parameters: [
+          { name: 'academyId', in: 'path', required: true, schema: { type: 'string' } },
+          { name: 'startDate', in: 'query', required: false, schema: { type: 'string', format: 'date' } },
+          { name: 'endDate', in: 'query', required: false, schema: { type: 'string', format: 'date' } },
+          { name: 'sport', in: 'query', required: false, schema: { type: 'string' } },
+        ],
+        responses: {
+          '200': { description: 'Coaching classes returned' },
+          '403': { description: 'Not authorised' },
+          '404': { description: 'Academy not found' },
+        },
+      },
+    },
+    '/api/coaching/all': {
+      get: {
+        tags: ['Coaching'],
+        summary: 'Get all active upcoming coaching classes for user discovery',
+        security: [{ BearerAuth: [] }],
+        parameters: [
+          { name: 'sport', in: 'query', required: false, schema: { type: 'string' } },
+        ],
+        responses: {
+          '200': { description: 'Coaching classes returned' },
+        },
+      },
+    },
+    '/api/coaching/user-activities': {
+      get: {
+        tags: ['Coaching'],
+        summary: 'Get coaching classes joined by the authenticated user',
+        security: [{ BearerAuth: [] }],
+        responses: {
+          '200': { description: 'Joined coaching classes returned' },
+        },
+      },
+    },
+    '/api/coaching/share/{shareCode}': {
+      get: {
+        tags: ['Coaching'],
+        summary: 'Get coaching class details by share code (public/user view)',
+        security: [{ BearerAuth: [] }],
+        parameters: [
+          { name: 'shareCode', in: 'path', required: true, schema: { type: 'string' } },
+        ],
+        responses: {
+          '200': { description: 'Coaching class details returned' },
+          '404': { description: 'Coaching class not found or not active' },
+        },
+      },
+    },
+    '/api/coaching/{coachingId}': {
+      get: {
+        tags: ['Coaching'],
+        summary: 'Get a single coaching class by ID',
+        security: [{ BearerAuth: [] }],
+        parameters: [
+          { name: 'coachingId', in: 'path', required: true, schema: { type: 'string' } },
+        ],
+        responses: {
+          '200': { description: 'Coaching class returned' },
+          '404': { description: 'Coaching class not found' },
+        },
+      },
+      put: {
+        tags: ['Coaching'],
+        summary: 'Academy edits a coaching class or updates this-and-future series',
+        security: [{ BearerAuth: [] }],
+        parameters: [
+          { name: 'coachingId', in: 'path', required: true, schema: { type: 'string' } },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  scope: { type: 'string', enum: ['single', 'future'], default: 'single' },
+                  sport: { type: 'string' },
+                  courtNumber: { type: 'integer' },
+                  title: { type: 'string' },
+                  description: { type: 'string' },
+                  skillLevel: { type: 'string' },
+                  coachName: { type: 'string' },
+                  coachBio: { type: 'string' },
+                  coachContact: { type: 'string' },
+                  date: { type: 'string', format: 'date' },
+                  startTime: { type: 'string', example: '18:00' },
+                  endTime: { type: 'string', example: '19:30' },
+                  pricePerParticipant: { type: 'number' },
+                  recurrenceType: { type: 'string', enum: ['none', 'daily', 'weekly'] },
+                  recurrenceDays: { type: 'array', items: { type: 'integer', minimum: 0, maximum: 6 } },
+                  recurrenceUntil: { type: 'string', format: 'date' },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          '200': { description: 'Coaching class updated successfully' },
+          '400': { description: 'Validation error or slot conflict' },
+          '403': { description: 'Not authorised' },
+          '404': { description: 'Coaching class not found' },
+        },
+      },
+      delete: {
+        tags: ['Coaching'],
+        summary: 'Academy cancels a single coaching class occurrence',
+        security: [{ BearerAuth: [] }],
+        parameters: [
+          { name: 'coachingId', in: 'path', required: true, schema: { type: 'string' } },
+        ],
+        responses: {
+          '200': { description: 'Coaching class cancelled' },
+          '403': { description: 'Not authorised' },
+          '404': { description: 'Coaching class not found' },
+        },
+      },
+    },
+    '/api/coaching/series/{seriesId}/from/{fromDate}': {
+      delete: {
+        tags: ['Coaching'],
+        summary: 'Academy cancels all future occurrences in a coaching series from a given date',
+        security: [{ BearerAuth: [] }],
+        parameters: [
+          { name: 'seriesId', in: 'path', required: true, schema: { type: 'string' } },
+          { name: 'fromDate', in: 'path', required: true, schema: { type: 'string', format: 'date' } },
+        ],
+        responses: {
+          '200': { description: 'Future coaching classes cancelled' },
+          '403': { description: 'Not authorised' },
+          '404': { description: 'Series not found' },
+        },
+      },
+    },
+    '/api/coaching/{coachingId}/share-link': {
+      get: {
+        tags: ['Coaching'],
+        summary: 'Get (or generate) the share code for a coaching class',
+        security: [{ BearerAuth: [] }],
+        parameters: [
+          { name: 'coachingId', in: 'path', required: true, schema: { type: 'string' } },
+        ],
+        responses: {
+          '200': {
+            description: 'Share code returned',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: { shareCode: { type: 'string' } },
+                },
+              },
+            },
+          },
+          '403': { description: 'Not authorised' },
+          '404': { description: 'Coaching class not found' },
+        },
+      },
+    },
+    '/api/coaching/{coachingId}/request-join': {
+      post: {
+        tags: ['Coaching'],
+        summary: 'User sends a join request for a coaching class',
+        security: [{ BearerAuth: [] }],
+        parameters: [
+          { name: 'coachingId', in: 'path', required: true, schema: { type: 'string' } },
+        ],
+        responses: {
+          '200': { description: 'Join request sent' },
+          '400': { description: 'Already joined or already requested' },
+          '404': { description: 'Coaching class not found or not active' },
+        },
+      },
+    },
+    '/api/coaching/{coachingId}/approve/{userId}': {
+      post: {
+        tags: ['Coaching'],
+        summary: 'Academy approves a pending coaching join request',
+        security: [{ BearerAuth: [] }],
+        parameters: [
+          { name: 'coachingId', in: 'path', required: true, schema: { type: 'string' } },
+          { name: 'userId', in: 'path', required: true, schema: { type: 'string' } },
+        ],
+        responses: {
+          '200': { description: 'User approved' },
+          '400': { description: 'No pending request' },
+          '403': { description: 'Not authorised' },
+          '404': { description: 'Coaching class not found' },
+        },
+      },
+    },
+    '/api/coaching/{coachingId}/reject/{userId}': {
+      post: {
+        tags: ['Coaching'],
+        summary: 'Academy rejects pending coaching request or removes an approved participant',
+        security: [{ BearerAuth: [] }],
+        parameters: [
+          { name: 'coachingId', in: 'path', required: true, schema: { type: 'string' } },
+          { name: 'userId', in: 'path', required: true, schema: { type: 'string' } },
+        ],
+        responses: {
+          '200': { description: 'Request rejected or participant removed' },
+          '400': { description: 'User not in pending or joined list' },
+          '403': { description: 'Not authorised' },
+          '404': { description: 'Coaching class not found' },
+        },
+      },
+    },
   },
 };
 

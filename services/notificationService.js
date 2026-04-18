@@ -51,6 +51,48 @@ const DEFAULT_TEMPLATES = [
     channels: { push: true, email: false, sms: false }
   },
   {
+    key: 'coaching.joinRequest.sent.forAcademy',
+    title: 'New coaching join request',
+    body: '{{userName}} requested to join your {{sport}} coaching class on {{date}} at {{startTime}}.',
+    channels: { push: true, email: true, sms: false }
+  },
+  {
+    key: 'coaching.request.accepted.forParticipant',
+    title: 'Coaching request accepted',
+    body: '{{academyName}} accepted your request for the {{sport}} coaching class on {{date}} at {{startTime}}.',
+    channels: { push: true, email: true, sms: false }
+  },
+  {
+    key: 'coaching.request.rejected.forParticipant',
+    title: 'Coaching request rejected',
+    body: 'Your request for the {{sport}} coaching class on {{date}} at {{startTime}} was rejected by {{academyName}}.',
+    channels: { push: true, email: false, sms: false }
+  },
+  {
+    key: 'coaching.participant.removed.forParticipant',
+    title: 'Removed from coaching class',
+    body: '{{academyName}} removed you from the {{sport}} coaching class on {{date}} at {{startTime}}.',
+    channels: { push: true, email: false, sms: false }
+  },
+  {
+    key: 'coaching.class.cancelled.forParticipant',
+    title: 'Coaching class cancelled',
+    body: '{{academyName}} cancelled the {{sport}} coaching class on {{date}} at {{startTime}}.',
+    channels: { push: true, email: true, sms: false }
+  },
+  {
+    key: 'coaching.series.cancelled.forParticipant',
+    title: 'Coaching series updated',
+    body: 'A future {{sport}} coaching class on {{date}} at {{startTime}} was cancelled.',
+    channels: { push: true, email: false, sms: false }
+  },
+  {
+    key: 'coaching.reminder.15min.forParticipant',
+    title: 'Coaching class starts in 15 minutes',
+    body: 'Your {{sport}} coaching class at {{academyName}} starts at {{startTime}}.',
+    channels: { push: true, email: false, sms: false }
+  },
+  {
     key: 'activity.cancelled.byHost.forParticipants',
     title: 'Activity cancelled by host',
     body: '{{hostName}} cancelled the {{sport}} activity scheduled for {{date}} at {{fromTime}}.',
