@@ -1348,6 +1348,82 @@ const swaggerSpec = {
         },
       },
     },
+    '/api/dashboard/admin-overview': {
+      get: {
+        tags: ['Dashboard'],
+        summary: 'Get superadmin overview metrics and platform snapshots',
+        security: [{ BearerAuth: [] }],
+        responses: {
+          '200': {
+            description: 'Superadmin dashboard overview returned',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    metrics: {
+                      type: 'object',
+                      properties: {
+                        totalAcademies: { type: 'number' },
+                        totalPlayers: { type: 'number' },
+                        totalAcademyManagers: { type: 'number' },
+                        totalSports: { type: 'number' },
+                        totalCities: { type: 'number' },
+                        confirmedBookingsToday: { type: 'number' },
+                        confirmedBookingsNext7Days: { type: 'number' },
+                        activeDropInsNext7Days: { type: 'number' },
+                        activeCoachingNext7Days: { type: 'number' },
+                        totalNotifications: { type: 'number' },
+                        unreadNotifications: { type: 'number' },
+                        academiesCreatedLast30Days: { type: 'number' },
+                      },
+                    },
+                    recentAcademies: {
+                      type: 'array',
+                      items: {
+                        type: 'object',
+                        properties: {
+                          _id: { type: 'string' },
+                          name: { type: 'string' },
+                          city: { type: 'string' },
+                          sportsCount: { type: 'number' },
+                          createdAt: { type: 'string', format: 'date-time' },
+                          updatedAt: { type: 'string', format: 'date-time' },
+                        },
+                      },
+                    },
+                    topCities: {
+                      type: 'array',
+                      items: {
+                        type: 'object',
+                        properties: {
+                          city: { type: 'string' },
+                          academyCount: { type: 'number' },
+                        },
+                      },
+                    },
+                    busiestSports: {
+                      type: 'array',
+                      items: {
+                        type: 'object',
+                        properties: {
+                          sportName: { type: 'string' },
+                          academyCount: { type: 'number' },
+                          courtCount: { type: 'number' },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          '403': {
+            description: 'Only superadmin can access this endpoint',
+          },
+        },
+      },
+    },
     '/api/notification/my': {
       get: {
         tags: ['Notification'],
