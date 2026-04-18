@@ -3,14 +3,112 @@ const router = express.Router();
 const Academy = require('../models/Academy');
 const User = require('../models/User');
 const Activity = require('../models/Activity');
+const Booking = require('../models/Booking');
+const DropIn = require('../models/DropIn');
+const Coaching = require('../models/Coaching');
 
 const { encrypt, decrypt } = require('../utils/helperFunctions');
 const { createEmptyFeedbackProfile, SKILL_LEVEL_TO_SCORE, scoreToSkillLevel } = require('../services/playerFeedback');
 
 const SELF_RATING_LEVELS = ['Beginner', 'Amateur', 'Intermediate', 'Advanced', 'Professional'];
+const FEEDBACK_SKILL_TO_RATING = {
+  Beginner: 1,
+  Amateur: 2,
+  Intermediate: 3,
+  Advanced: 4,
+  Professional: 5
+};
 
 const normalizeSportName = (value) => String(value || '').trim().toLowerCase();
 const roundToTwo = (value) => Math.round(value * 100) / 100;
+
+const toDateKey = (date = new Date()) => {
+  const y = date.getUTCFullYear();
+  const m = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const d = String(date.getUTCDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+};
+
+const buildVenueDetailsForUser = async (academy, viewerUserId) => {
+  const academyId = academy._id;
+  const todayKey = toDateKey();
+
+  const [completedBookings, completedDropIns, completedCoaching, completedActivities, upcomingBookings, upcomingDropIns, upcomingCoaching, upcomingActivities, completedActivitiesForFeedback, ratingAggregate, viewer] = await Promise.all([
+    Booking.countDocuments({ academyId, status: 'Confirmed', date: { $lt: todayKey } }),
+    DropIn.countDocuments({ academyId, status: 'Active', date: { $lt: todayKey } }),
+    Coaching.countDocuments({ academyId, status: 'Active', date: { $lt: todayKey } }),
+    Activity.countDocuments({ academyId, status: 'Completed' }),
+    Booking.countDocuments({ academyId, status: 'Confirmed', date: { $gte: todayKey } }),
+    DropIn.countDocuments({ academyId, status: 'Active', date: { $gte: todayKey } }),
+    Coaching.countDocuments({ academyId, status: 'Active', date: { $gte: todayKey } }),
+    Activity.countDocuments({ academyId, status: 'Active' }),
+    Activity.find({ academyId, status: 'Completed' }).select('playerFeedback').lean(),
+    User.aggregate([
+      { $unwind: '$venueRatings' },
+      { $match: { 'venueRatings.academyId': academyId } },
+      {
+        $group: {
+          _id: '$venueRatings.academyId',
+          average: { $avg: '$venueRatings.rating' },
+          count: { $sum: 1 }
+        }
+      }
+    ]),
+    User.findById(viewerUserId).select('favoriteAcademies venueRatings').lean()
+  ]);
+
+  const totalGamesPlayed = completedBookings + completedDropIns + completedCoaching + completedActivities;
+  const upcomingGames = upcomingBookings + upcomingDropIns + upcomingCoaching + upcomingActivities;
+
+  let feedbackRatingSum = 0;
+  let feedbackRatingCount = 0;
+  completedActivitiesForFeedback.forEach((activity) => {
+    (activity.playerFeedback || []).forEach((feedback) => {
+      if (feedback?.noShow || !feedback?.skillLevel) return;
+      const rating = FEEDBACK_SKILL_TO_RATING[feedback.skillLevel];
+      if (!rating) return;
+      feedbackRatingSum += rating;
+      feedbackRatingCount += 1;
+    });
+  });
+
+  const feedbackAverage = feedbackRatingCount ? (feedbackRatingSum / feedbackRatingCount) : 0;
+  const userAverage = ratingAggregate[0]?.average || 0;
+  const userCount = ratingAggregate[0]?.count || 0;
+  const combinedAverage = (feedbackRatingCount + userCount)
+    ? ((feedbackAverage * feedbackRatingCount) + (userAverage * userCount)) / (feedbackRatingCount + userCount)
+    : 0;
+
+  const myRating = (viewer?.venueRatings || []).find((entry) => String(entry.academyId) === String(academyId))?.rating || 0;
+  const isFavorite = (viewer?.favoriteAcademies || []).some((favId) => String(favId) === String(academyId));
+
+  return {
+    id: academy._id,
+    name: academy.name,
+    address: academy.address,
+    city: academy.city,
+    mapLink: academy.mapLink || '',
+    photos: academy.photos || [],
+    openTime: academy.openTime || '',
+    closeTime: academy.closeTime || '',
+    amenities: academy.amenities || {},
+    sports: (academy.sports || []).map((sport) => ({
+      sportName: sport.sportName,
+      numberOfCourts: sport.numberOfCourts,
+      startTime: sport.startTime,
+      endTime: sport.endTime
+    })),
+    totalGamesPlayed,
+    upcomingGames,
+    averageRating: roundToTwo(combinedAverage),
+    totalRatings: feedbackRatingCount + userCount,
+    shareCode: academy.shareCode,
+    viewer: {
+      isFavorite,
+      myRating
+    }
+  };
+};
 
 const getUniqueSports = async () => {
   const uniqueSports = await Academy.aggregate([
@@ -380,6 +478,131 @@ router.delete('/games', async (req, res) => {
 
     await user.save();
     return res.status(200).json({ message: 'Sport removed from your games list' });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ message: 'Server error' });
+  }
+});
+
+router.get('/venue/:shareCode', async (req, res) => {
+  try {
+    const { shareCode } = req.params;
+    if (!shareCode) {
+      return res.status(400).json({ message: 'shareCode is required' });
+    }
+
+    const academy = await Academy.findOne({ shareCode })
+      .select('name address city mapLink photos openTime closeTime amenities sports shareCode')
+      .lean();
+
+    if (!academy) {
+      return res.status(404).json({ message: 'Venue not found' });
+    }
+
+    const venue = await buildVenueDetailsForUser(academy, req.user._id);
+    return res.status(200).json({ venue });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ message: 'Server error' });
+  }
+});
+
+router.post('/venue/:academyId/favorite', async (req, res) => {
+  try {
+    const { academyId } = req.params;
+    const { isFavorite } = req.body || {};
+
+    const academy = await Academy.findById(academyId).select('_id');
+    if (!academy) {
+      return res.status(404).json({ message: 'Venue not found' });
+    }
+
+    const user = await User.findById(req.user._id).select('favoriteAcademies');
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    const alreadyFavorite = (user.favoriteAcademies || []).some((favId) => String(favId) === String(academyId));
+    const nextFavorite = typeof isFavorite === 'boolean' ? isFavorite : !alreadyFavorite;
+
+    if (nextFavorite && !alreadyFavorite) {
+      user.favoriteAcademies.push(academyId);
+    }
+
+    if (!nextFavorite && alreadyFavorite) {
+      user.favoriteAcademies = user.favoriteAcademies.filter((favId) => String(favId) !== String(academyId));
+    }
+
+    await user.save();
+    return res.status(200).json({ isFavorite: nextFavorite });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ message: 'Server error' });
+  }
+});
+
+router.post('/venue/:academyId/rate', async (req, res) => {
+  try {
+    const { academyId } = req.params;
+    const rating = Number(req.body?.rating);
+
+    if (!Number.isFinite(rating) || rating < 1 || rating > 5) {
+      return res.status(400).json({ message: 'rating must be a number between 1 and 5' });
+    }
+
+    const academy = await Academy.findById(academyId).select('_id shareCode');
+    if (!academy) {
+      return res.status(404).json({ message: 'Venue not found' });
+    }
+
+    const user = await User.findById(req.user._id).select('venueRatings favoriteAcademies');
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    const existingRating = (user.venueRatings || []).find((entry) => String(entry.academyId) === String(academyId));
+    if (existingRating) {
+      existingRating.rating = rating;
+      existingRating.updatedAt = new Date();
+    } else {
+      user.venueRatings.push({ academyId, rating, updatedAt: new Date() });
+    }
+
+    await user.save();
+
+    const ratingAggregate = await User.aggregate([
+      { $unwind: '$venueRatings' },
+      { $match: { 'venueRatings.academyId': academy._id } },
+      {
+        $group: {
+          _id: '$venueRatings.academyId',
+          average: { $avg: '$venueRatings.rating' },
+          count: { $sum: 1 }
+        }
+      }
+    ]);
+
+    return res.status(200).json({
+      myRating: rating,
+      userRatingsAverage: roundToTwo(ratingAggregate[0]?.average || 0),
+      userRatingsCount: ratingAggregate[0]?.count || 0
+    });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ message: 'Server error' });
+  }
+});
+
+router.get('/favorite-academies', async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id).select('favoriteAcademies').lean();
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    return res.status(200).json({
+      favoriteAcademyIds: (user.favoriteAcademies || []).map((id) => id.toString())
+    });
   } catch (err) {
     console.error(err);
     return res.status(500).json({ message: 'Server error' });

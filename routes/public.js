@@ -4,12 +4,29 @@ const router = express.Router();
 const Activity = require('../models/Activity');
 const Academy = require('../models/Academy');
 const User = require('../models/User');
+const Booking = require('../models/Booking');
+const DropIn = require('../models/DropIn');
+const Coaching = require('../models/Coaching');
 const { encrypt, decrypt } = require('../utils/helperFunctions');
 const { createEmptyFeedbackProfile, SKILL_LEVEL_TO_SCORE, scoreToSkillLevel } = require('../services/playerFeedback');
 
 const toIdString = (value) => value?.toString?.() || String(value);
 const normalizeSportName = (value) => String(value || '').trim().toLowerCase();
 const roundToTwo = (value) => Math.round(value * 100) / 100;
+const FEEDBACK_SKILL_TO_RATING = {
+  Beginner: 1,
+  Amateur: 2,
+  Intermediate: 3,
+  Advanced: 4,
+  Professional: 5
+};
+
+const toDateKey = (date = new Date()) => {
+  const y = date.getUTCFullYear();
+  const m = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const d = String(date.getUTCDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+};
 
 const getUniqueSports = async () => {
   const uniqueSports = await Academy.aggregate([
@@ -312,6 +329,81 @@ router.post('/user/profile-summary', async (req, res) => {
   } catch (error) {
     console.error('Error fetching public profile summary:', error);
     return res.status(500).json({ message: 'Failed to fetch profile details' });
+  }
+});
+
+router.get('/venue/:shareCode', async (req, res) => {
+  try {
+    const { shareCode } = req.params;
+
+    if (!shareCode) {
+      return res.status(400).json({ message: 'shareCode is required' });
+    }
+
+    const academy = await Academy.findOne({ shareCode })
+      .select('name address city mapLink photos openTime closeTime amenities sports shareCode')
+      .lean();
+
+    if (!academy) {
+      return res.status(404).json({ message: 'Venue not found' });
+    }
+
+    const academyId = academy._id;
+    const todayKey = toDateKey();
+
+    const [completedBookings, completedDropIns, completedCoaching, completedActivities, upcomingBookings, upcomingDropIns, upcomingCoaching, upcomingActivities, completedActivitiesForFeedback] = await Promise.all([
+      Booking.countDocuments({ academyId, status: 'Confirmed', date: { $lt: todayKey } }),
+      DropIn.countDocuments({ academyId, status: 'Active', date: { $lt: todayKey } }),
+      Coaching.countDocuments({ academyId, status: 'Active', date: { $lt: todayKey } }),
+      Activity.countDocuments({ academyId, status: 'Completed' }),
+      Booking.countDocuments({ academyId, status: 'Confirmed', date: { $gte: todayKey } }),
+      DropIn.countDocuments({ academyId, status: 'Active', date: { $gte: todayKey } }),
+      Coaching.countDocuments({ academyId, status: 'Active', date: { $gte: todayKey } }),
+      Activity.countDocuments({ academyId, status: 'Active' }),
+      Activity.find({ academyId, status: 'Completed' }).select('playerFeedback').lean()
+    ]);
+
+    let ratingSum = 0;
+    let ratingCount = 0;
+    completedActivitiesForFeedback.forEach((activity) => {
+      (activity.playerFeedback || []).forEach((feedback) => {
+        if (feedback?.noShow || !feedback?.skillLevel) return;
+        const rating = FEEDBACK_SKILL_TO_RATING[feedback.skillLevel];
+        if (!rating) return;
+        ratingSum += rating;
+        ratingCount += 1;
+      });
+    });
+
+    const averageRating = ratingCount ? Math.round((ratingSum / ratingCount) * 10) / 10 : 0;
+
+    return res.status(200).json({
+      venue: {
+        id: academy._id,
+        name: academy.name,
+        address: academy.address,
+        city: academy.city,
+        mapLink: academy.mapLink || '',
+        photos: academy.photos || [],
+        openTime: academy.openTime || '',
+        closeTime: academy.closeTime || '',
+        amenities: academy.amenities || {},
+        sports: (academy.sports || []).map((sport) => ({
+          sportName: sport.sportName,
+          numberOfCourts: sport.numberOfCourts,
+          startTime: sport.startTime,
+          endTime: sport.endTime
+        })),
+        totalGamesPlayed: completedBookings + completedDropIns + completedCoaching + completedActivities,
+        upcomingGames: upcomingBookings + upcomingDropIns + upcomingCoaching + upcomingActivities,
+        averageRating,
+        totalRatings: ratingCount,
+        shareCode: academy.shareCode
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching public venue:', error);
+    return res.status(500).json({ message: 'Failed to fetch venue details' });
   }
 });
 

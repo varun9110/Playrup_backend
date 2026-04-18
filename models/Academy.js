@@ -13,6 +13,17 @@ const sportSchema = new mongoose.Schema({
   pricing: [pricingSchema]
 }, { timestamps: true });
 
+const amenitySchema = new mongoose.Schema({
+  parking: { type: Boolean, default: false },
+  drinkingWater: { type: Boolean, default: false },
+  changingRooms: { type: Boolean, default: false },
+  warmupArea: { type: Boolean, default: false },
+  wifi: { type: Boolean, default: false },
+  cctvCamera: { type: Boolean, default: false },
+  shower: { type: Boolean, default: false },
+  cafeteria: { type: Boolean, default: false }
+}, { _id: false });
+
 const academySchema = new mongoose.Schema({
   name: String,
   userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
@@ -20,6 +31,12 @@ const academySchema = new mongoose.Schema({
   phone: String,
   address: String,
   city: String,
+  mapLink: { type: String, default: '' },
+  photos: { type: [String], default: [] },
+  openTime: { type: String, default: '' },
+  closeTime: { type: String, default: '' },
+  amenities: { type: amenitySchema, default: () => ({}) },
+  shareCode: { type: String, unique: true, sparse: true },
   sports: [sportSchema]
 }, { timestamps: true });
 

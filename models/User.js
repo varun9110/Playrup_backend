@@ -44,6 +44,12 @@ const gameStatSchema = new mongoose.Schema({
   totalGamesPlayed: { type: Number, default: 0 }
 }, { _id: false });
 
+const venueRatingSchema = new mongoose.Schema({
+  academyId: { type: mongoose.Schema.Types.ObjectId, ref: 'Academy', required: true },
+  rating: { type: Number, min: 1, max: 5, required: true },
+  updatedAt: { type: Date, default: Date.now }
+}, { _id: false });
+
 const userSchema = new mongoose.Schema({
   email: { type: String, unique: true, required: true },
   name: { type: String, unique: true, required: true },
@@ -57,6 +63,8 @@ const userSchema = new mongoose.Schema({
   tokenExpiry: Date,
   karmaPoints: { type: Number, default: 0 },
   playPals: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+  favoriteAcademies: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Academy' }],
+  venueRatings: { type: [venueRatingSchema], default: [] },
   games: [gameStatSchema],
   feedbackProfile: { type: feedbackProfileSchema, default: () => ({}) }
 }, { timestamps: true });

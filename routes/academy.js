@@ -3,10 +3,115 @@ const router = express.Router();
 const bcrypt = require('bcrypt');
 const crypto = require('crypto');
 const nodemailer = require('nodemailer');
+const fs = require('fs');
+const path = require('path');
+const multer = require('multer');
 
 const Academy = require('../models/Academy');
+const Activity = require('../models/Activity');
+const Booking = require('../models/Booking');
+const DropIn = require('../models/DropIn');
+const Coaching = require('../models/Coaching');
 const User = require('../models/User');
 const { capitalizeWords, decrypt, encrypt } = require('../utils/helperFunctions');
+
+const FEEDBACK_SKILL_TO_RATING = {
+  Beginner: 1,
+  Amateur: 2,
+  Intermediate: 3,
+  Advanced: 4,
+  Professional: 5
+};
+
+const academyPhotoUploadDir = path.join(__dirname, '..', 'uploads', 'academy-photos');
+if (!fs.existsSync(academyPhotoUploadDir)) {
+  fs.mkdirSync(academyPhotoUploadDir, { recursive: true });
+}
+
+const academyPhotoStorage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, academyPhotoUploadDir),
+  filename: (_req, file, cb) => {
+    const extension = path.extname(file.originalname || '').toLowerCase() || '.jpg';
+    cb(null, `${Date.now()}-${crypto.randomUUID()}${extension}`);
+  }
+});
+
+const academyPhotoUpload = multer({
+  storage: academyPhotoStorage,
+  limits: { fileSize: 5 * 1024 * 1024, files: 8 },
+  fileFilter: (_req, file, cb) => {
+    if (!file?.mimetype?.startsWith('image/')) {
+      return cb(new Error('Only image uploads are allowed'));
+    }
+    cb(null, true);
+  }
+});
+
+const toDateKey = (date = new Date()) => {
+  const y = date.getUTCFullYear();
+  const m = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const d = String(date.getUTCDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+};
+
+const toSafeLower = (value) => String(value || '').trim().toLowerCase();
+
+const ensureAcademyShareCode = async (academy) => {
+  if (academy.shareCode) {
+    return academy.shareCode;
+  }
+
+  let code;
+  let exists;
+  do {
+    code = crypto.randomBytes(5).toString('hex');
+    exists = await Academy.exists({ shareCode: code });
+  } while (exists);
+
+  academy.shareCode = code;
+  await academy.save();
+  return code;
+};
+
+const getAcademyStats = async (academyId) => {
+  const todayKey = toDateKey();
+
+  const [completedBookings, completedDropIns, completedCoaching, completedActivities, upcomingBookings, upcomingDropIns, upcomingCoaching, upcomingActivities, completedActivitiesForFeedback] = await Promise.all([
+    Booking.countDocuments({ academyId, status: 'Confirmed', date: { $lt: todayKey } }),
+    DropIn.countDocuments({ academyId, status: 'Active', date: { $lt: todayKey } }),
+    Coaching.countDocuments({ academyId, status: 'Active', date: { $lt: todayKey } }),
+    Activity.countDocuments({ academyId, status: 'Completed' }),
+    Booking.countDocuments({ academyId, status: 'Confirmed', date: { $gte: todayKey } }),
+    DropIn.countDocuments({ academyId, status: 'Active', date: { $gte: todayKey } }),
+    Coaching.countDocuments({ academyId, status: 'Active', date: { $gte: todayKey } }),
+    Activity.countDocuments({ academyId, status: 'Active' }),
+    Activity.find({ academyId, status: 'Completed' }).select('playerFeedback').lean()
+  ]);
+
+  const totalGamesPlayed = completedBookings + completedDropIns + completedCoaching + completedActivities;
+  const upcomingGames = upcomingBookings + upcomingDropIns + upcomingCoaching + upcomingActivities;
+
+  let ratingSum = 0;
+  let ratingCount = 0;
+  completedActivitiesForFeedback.forEach((activity) => {
+    (activity.playerFeedback || []).forEach((feedback) => {
+      if (feedback?.noShow || !feedback?.skillLevel) return;
+      const rating = FEEDBACK_SKILL_TO_RATING[feedback.skillLevel];
+      if (!rating) return;
+      ratingSum += rating;
+      ratingCount += 1;
+    });
+  });
+
+  const averageRating = ratingCount ? Math.round((ratingSum / ratingCount) * 10) / 10 : 0;
+
+  return {
+    totalGamesPlayed,
+    upcomingGames,
+    averageRating,
+    totalRatings: ratingCount
+  };
+};
 
 // POST /academy/onboard-academy
 /**
@@ -87,7 +192,8 @@ router.post('/onboard-academy', async (req, res) => {
       email: email.toLowerCase(),
       phone: phone.toLowerCase(),
       address: address.toLowerCase(),
-      city: city.toLowerCase()
+      city: city.toLowerCase(),
+      shareCode: crypto.randomBytes(5).toString('hex')
     });
     await newAcademy.save();
 
@@ -519,6 +625,154 @@ router.post('/user-academies', async (req, res) => {
       success: false,
       message: 'Server error'
     });
+  }
+});
+
+router.get('/profile/:academyId', async (req, res) => {
+  try {
+    const { academyId } = req.params;
+    const academy = await Academy.findById(academyId);
+
+    if (!academy) {
+      return res.status(404).json({ success: false, message: 'Academy not found' });
+    }
+
+    if (String(academy.userId) !== String(req.user?._id)) {
+      return res.status(403).json({ success: false, message: 'Not authorized to view this academy profile' });
+    }
+
+    const shareCode = await ensureAcademyShareCode(academy);
+    const stats = await getAcademyStats(academy._id);
+
+    return res.status(200).json({
+      success: true,
+      academy,
+      stats,
+      shareLink: `/venue/${shareCode}`
+    });
+  } catch (error) {
+    console.error('Error fetching academy profile:', error);
+    return res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+router.put('/profile/:academyId', async (req, res) => {
+  try {
+    const { academyId } = req.params;
+    const academy = await Academy.findById(academyId);
+
+    if (!academy) {
+      return res.status(404).json({ success: false, message: 'Academy not found' });
+    }
+
+    if (String(academy.userId) !== String(req.user?._id)) {
+      return res.status(403).json({ success: false, message: 'Not authorized to update this academy profile' });
+    }
+
+    const {
+      name,
+      phone,
+      address,
+      city,
+      mapLink,
+      openTime,
+      closeTime,
+      amenities
+    } = req.body || {};
+
+    if (typeof name === 'string') academy.name = toSafeLower(name);
+    if (typeof phone === 'string') academy.phone = phone.trim();
+    if (typeof address === 'string') academy.address = toSafeLower(address);
+    if (typeof city === 'string') academy.city = toSafeLower(city);
+    if (typeof mapLink === 'string') academy.mapLink = mapLink.trim();
+    if (typeof openTime === 'string') academy.openTime = openTime;
+    if (typeof closeTime === 'string') academy.closeTime = closeTime;
+    if (amenities && typeof amenities === 'object') {
+      academy.amenities = {
+        ...academy.amenities,
+        ...amenities
+      };
+    }
+
+    await academy.save();
+    const stats = await getAcademyStats(academy._id);
+    const shareCode = await ensureAcademyShareCode(academy);
+
+    return res.status(200).json({
+      success: true,
+      message: 'Academy profile updated',
+      academy,
+      stats,
+      shareLink: `/venue/${shareCode}`
+    });
+  } catch (error) {
+    console.error('Error updating academy profile:', error);
+    return res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+router.post('/profile/:academyId/photos', academyPhotoUpload.array('photos', 8), async (req, res) => {
+  try {
+    const { academyId } = req.params;
+    const academy = await Academy.findById(academyId);
+
+    if (!academy) {
+      return res.status(404).json({ success: false, message: 'Academy not found' });
+    }
+
+    if (String(academy.userId) !== String(req.user?._id)) {
+      return res.status(403).json({ success: false, message: 'Not authorized to update photos' });
+    }
+
+    const uploadedPaths = (req.files || []).map((file) => `/uploads/academy-photos/${file.filename}`);
+    if (!uploadedPaths.length) {
+      return res.status(400).json({ success: false, message: 'At least one photo is required' });
+    }
+
+    const mergedPhotos = Array.from(new Set([...(academy.photos || []), ...uploadedPaths]));
+    academy.photos = mergedPhotos.slice(0, 12);
+    await academy.save();
+
+    return res.status(200).json({
+      success: true,
+      message: 'Photos uploaded successfully',
+      photos: academy.photos
+    });
+  } catch (error) {
+    console.error('Error uploading academy photos:', error);
+    return res.status(500).json({ success: false, message: 'Failed to upload photos' });
+  }
+});
+
+router.delete('/profile/:academyId/photos', async (req, res) => {
+  try {
+    const { academyId } = req.params;
+    const { photoUrl } = req.body || {};
+
+    const academy = await Academy.findById(academyId);
+    if (!academy) {
+      return res.status(404).json({ success: false, message: 'Academy not found' });
+    }
+
+    if (String(academy.userId) !== String(req.user?._id)) {
+      return res.status(403).json({ success: false, message: 'Not authorized to update photos' });
+    }
+
+    if (!photoUrl) {
+      return res.status(400).json({ success: false, message: 'photoUrl is required' });
+    }
+
+    academy.photos = (academy.photos || []).filter((item) => item !== photoUrl);
+    await academy.save();
+
+    return res.status(200).json({
+      success: true,
+      message: 'Photo removed',
+      photos: academy.photos
+    });
+  } catch (error) {
+    console.error('Error deleting academy photo:', error);
+    return res.status(500).json({ success: false, message: 'Failed to delete photo' });
   }
 });
 

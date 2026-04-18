@@ -217,6 +217,45 @@ const swaggerSpec = {
           },
         },
       },
+      AcademyVenuePublicResponse: {
+        type: 'object',
+        properties: {
+          venue: {
+            type: 'object',
+            properties: {
+              id: { type: 'string' },
+              name: { type: 'string' },
+              address: { type: 'string' },
+              city: { type: 'string' },
+              mapLink: { type: 'string' },
+              photos: {
+                type: 'array',
+                items: { type: 'string' },
+              },
+              openTime: { type: 'string' },
+              closeTime: { type: 'string' },
+              amenities: {
+                type: 'object',
+                properties: {
+                  parking: { type: 'boolean' },
+                  drinkingWater: { type: 'boolean' },
+                  changingRooms: { type: 'boolean' },
+                  warmupArea: { type: 'boolean' },
+                  wifi: { type: 'boolean' },
+                  cctvCamera: { type: 'boolean' },
+                  shower: { type: 'boolean' },
+                  cafeteria: { type: 'boolean' },
+                },
+              },
+              totalGamesPlayed: { type: 'integer' },
+              upcomingGames: { type: 'integer' },
+              averageRating: { type: 'number' },
+              totalRatings: { type: 'integer' },
+              shareCode: { type: 'string' },
+            },
+          },
+        },
+      },
     },
   },
   paths: {
@@ -421,6 +460,145 @@ const swaggerSpec = {
         responses: { '200': { description: 'User academies returned' } },
       },
     },
+    '/api/academy/profile/{academyId}': {
+      get: {
+        tags: ['Academy'],
+        summary: 'Get academy profile with venue stats for owner',
+        security: [{ BearerAuth: [] }],
+        parameters: [
+          {
+            name: 'academyId',
+            in: 'path',
+            required: true,
+            schema: { type: 'string' },
+          },
+        ],
+        responses: {
+          '200': { description: 'Academy profile returned' },
+          '403': { description: 'Not authorised' },
+          '404': { description: 'Academy not found' },
+        },
+      },
+      put: {
+        tags: ['Academy'],
+        summary: 'Update academy profile details',
+        security: [{ BearerAuth: [] }],
+        parameters: [
+          {
+            name: 'academyId',
+            in: 'path',
+            required: true,
+            schema: { type: 'string' },
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  name: { type: 'string' },
+                  phone: { type: 'string' },
+                  address: { type: 'string' },
+                  city: { type: 'string' },
+                  mapLink: { type: 'string' },
+                  openTime: { type: 'string' },
+                  closeTime: { type: 'string' },
+                  amenities: {
+                    type: 'object',
+                    properties: {
+                      parking: { type: 'boolean' },
+                      drinkingWater: { type: 'boolean' },
+                      changingRooms: { type: 'boolean' },
+                      warmupArea: { type: 'boolean' },
+                      wifi: { type: 'boolean' },
+                      cctvCamera: { type: 'boolean' },
+                      shower: { type: 'boolean' },
+                      cafeteria: { type: 'boolean' },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          '200': { description: 'Academy profile updated' },
+          '403': { description: 'Not authorised' },
+          '404': { description: 'Academy not found' },
+        },
+      },
+    },
+    '/api/academy/profile/{academyId}/photos': {
+      post: {
+        tags: ['Academy'],
+        summary: 'Upload academy venue photos',
+        security: [{ BearerAuth: [] }],
+        parameters: [
+          {
+            name: 'academyId',
+            in: 'path',
+            required: true,
+            schema: { type: 'string' },
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            'multipart/form-data': {
+              schema: {
+                type: 'object',
+                properties: {
+                  photos: {
+                    type: 'array',
+                    items: { type: 'string', format: 'binary' },
+                  },
+                },
+                required: ['photos'],
+              },
+            },
+          },
+        },
+        responses: {
+          '200': { description: 'Photos uploaded successfully' },
+          '403': { description: 'Not authorised' },
+          '404': { description: 'Academy not found' },
+        },
+      },
+      delete: {
+        tags: ['Academy'],
+        summary: 'Delete one academy venue photo',
+        security: [{ BearerAuth: [] }],
+        parameters: [
+          {
+            name: 'academyId',
+            in: 'path',
+            required: true,
+            schema: { type: 'string' },
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  photoUrl: { type: 'string' },
+                },
+                required: ['photoUrl'],
+              },
+            },
+          },
+        },
+        responses: {
+          '200': { description: 'Photo removed' },
+          '403': { description: 'Not authorised' },
+          '404': { description: 'Academy not found' },
+        },
+      },
+    },
     '/api/activity/createActivity': {
       post: {
         tags: ['Activity'],
@@ -591,6 +769,31 @@ const swaggerSpec = {
             },
           },
           '404': { description: 'User not found' },
+        },
+      },
+    },
+    '/api/public/venue/{shareCode}': {
+      get: {
+        tags: ['Public Activity'],
+        summary: 'Get public venue profile details by share code',
+        parameters: [
+          {
+            name: 'shareCode',
+            in: 'path',
+            required: true,
+            schema: { type: 'string' },
+          },
+        ],
+        responses: {
+          '200': {
+            description: 'Venue details returned',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/AcademyVenuePublicResponse' },
+              },
+            },
+          },
+          '404': { description: 'Venue not found' },
         },
       },
     },
@@ -1478,6 +1681,102 @@ const swaggerSpec = {
         responses: {
           '200': { description: 'Profile summary returned' },
           '400': { description: 'userId is required' },
+          '404': { description: 'User not found' },
+        },
+      },
+    },
+    '/api/user/venue/{shareCode}': {
+      get: {
+        tags: ['User'],
+        summary: 'Get venue details with viewer preference and rating',
+        security: [{ BearerAuth: [] }],
+        parameters: [
+          {
+            name: 'shareCode',
+            in: 'path',
+            required: true,
+            schema: { type: 'string' },
+          },
+        ],
+        responses: {
+          '200': { description: 'Venue details returned' },
+          '404': { description: 'Venue not found' },
+        },
+      },
+    },
+    '/api/user/venue/{academyId}/favorite': {
+      post: {
+        tags: ['User'],
+        summary: 'Mark or unmark venue as favorite',
+        security: [{ BearerAuth: [] }],
+        parameters: [
+          {
+            name: 'academyId',
+            in: 'path',
+            required: true,
+            schema: { type: 'string' },
+          },
+        ],
+        requestBody: {
+          required: false,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  isFavorite: { type: 'boolean' },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          '200': { description: 'Favorite status updated' },
+          '404': { description: 'Venue not found' },
+        },
+      },
+    },
+    '/api/user/venue/{academyId}/rate': {
+      post: {
+        tags: ['User'],
+        summary: 'Submit or update venue star rating',
+        security: [{ BearerAuth: [] }],
+        parameters: [
+          {
+            name: 'academyId',
+            in: 'path',
+            required: true,
+            schema: { type: 'string' },
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  rating: { type: 'number', minimum: 1, maximum: 5 },
+                },
+                required: ['rating'],
+              },
+            },
+          },
+        },
+        responses: {
+          '200': { description: 'Rating saved' },
+          '400': { description: 'Invalid rating value' },
+          '404': { description: 'Venue not found' },
+        },
+      },
+    },
+    '/api/user/favorite-academies': {
+      get: {
+        tags: ['User'],
+        summary: 'Get current user favorite academy IDs',
+        security: [{ BearerAuth: [] }],
+        responses: {
+          '200': { description: 'Favorite academy IDs returned' },
           '404': { description: 'User not found' },
         },
       },
