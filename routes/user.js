@@ -11,14 +11,6 @@ const { encrypt, decrypt } = require('../utils/helperFunctions');
 const { createEmptyFeedbackProfile, SKILL_LEVEL_TO_SCORE, scoreToSkillLevel } = require('../services/playerFeedback');
 
 const SELF_RATING_LEVELS = ['Beginner', 'Amateur', 'Intermediate', 'Advanced', 'Professional'];
-const FEEDBACK_SKILL_TO_RATING = {
-  Beginner: 1,
-  Amateur: 2,
-  Intermediate: 3,
-  Advanced: 4,
-  Professional: 5
-};
-
 const normalizeSportName = (value) => String(value || '').trim().toLowerCase();
 const roundToTwo = (value) => Math.round(value * 100) / 100;
 
@@ -33,7 +25,7 @@ const buildVenueDetailsForUser = async (academy, viewerUserId) => {
   const academyId = academy._id;
   const todayKey = toDateKey();
 
-  const [completedBookings, completedDropIns, completedCoaching, completedActivities, upcomingBookings, upcomingDropIns, upcomingCoaching, upcomingActivities, completedActivitiesForFeedback, ratingAggregate, viewer] = await Promise.all([
+  const [completedBookings, completedDropIns, completedCoaching, completedActivities, upcomingBookings, upcomingDropIns, upcomingCoaching, upcomingActivities, ratingAggregate, viewer] = await Promise.all([
     Booking.countDocuments({ academyId, status: 'Confirmed', date: { $lt: todayKey } }),
     DropIn.countDocuments({ academyId, status: 'Active', date: { $lt: todayKey } }),
     Coaching.countDocuments({ academyId, status: 'Active', date: { $lt: todayKey } }),
@@ -42,7 +34,6 @@ const buildVenueDetailsForUser = async (academy, viewerUserId) => {
     DropIn.countDocuments({ academyId, status: 'Active', date: { $gte: todayKey } }),
     Coaching.countDocuments({ academyId, status: 'Active', date: { $gte: todayKey } }),
     Activity.countDocuments({ academyId, status: 'Active' }),
-    Activity.find({ academyId, status: 'Completed' }).select('playerFeedback').lean(),
     User.aggregate([
       { $unwind: '$venueRatings' },
       { $match: { 'venueRatings.academyId': academyId } },
@@ -60,24 +51,8 @@ const buildVenueDetailsForUser = async (academy, viewerUserId) => {
   const totalGamesPlayed = completedBookings + completedDropIns + completedCoaching + completedActivities;
   const upcomingGames = upcomingBookings + upcomingDropIns + upcomingCoaching + upcomingActivities;
 
-  let feedbackRatingSum = 0;
-  let feedbackRatingCount = 0;
-  completedActivitiesForFeedback.forEach((activity) => {
-    (activity.playerFeedback || []).forEach((feedback) => {
-      if (feedback?.noShow || !feedback?.skillLevel) return;
-      const rating = FEEDBACK_SKILL_TO_RATING[feedback.skillLevel];
-      if (!rating) return;
-      feedbackRatingSum += rating;
-      feedbackRatingCount += 1;
-    });
-  });
-
-  const feedbackAverage = feedbackRatingCount ? (feedbackRatingSum / feedbackRatingCount) : 0;
-  const userAverage = ratingAggregate[0]?.average || 0;
+  const userAverage = roundToTwo(ratingAggregate[0]?.average || 0);
   const userCount = ratingAggregate[0]?.count || 0;
-  const combinedAverage = (feedbackRatingCount + userCount)
-    ? ((feedbackAverage * feedbackRatingCount) + (userAverage * userCount)) / (feedbackRatingCount + userCount)
-    : 0;
 
   const myRating = (viewer?.venueRatings || []).find((entry) => String(entry.academyId) === String(academyId))?.rating || 0;
   const isFavorite = (viewer?.favoriteAcademies || []).some((favId) => String(favId) === String(academyId));
@@ -100,8 +75,8 @@ const buildVenueDetailsForUser = async (academy, viewerUserId) => {
     })),
     totalGamesPlayed,
     upcomingGames,
-    averageRating: roundToTwo(combinedAverage),
-    totalRatings: feedbackRatingCount + userCount,
+    averageRating: userAverage,
+    totalRatings: userCount,
     shareCode: academy.shareCode,
     viewer: {
       isFavorite,
