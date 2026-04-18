@@ -1806,6 +1806,23 @@ const swaggerSpec = {
         },
       },
     },
+    '/api/coaching/academy/{academyId}/programs': {
+      get: {
+        tags: ['Coaching'],
+        summary: 'Get coaching programs (series-grouped) for an academy',
+        description: 'Returns one program entry per coaching series (or standalone session). Each program includes aggregate enrolled/pending counts and a sessions list.',
+        security: [{ BearerAuth: [] }],
+        parameters: [
+          { name: 'academyId', in: 'path', required: true, schema: { type: 'string' } },
+          { name: 'sport', in: 'query', required: false, schema: { type: 'string' } },
+        ],
+        responses: {
+          '200': { description: 'Coaching programs returned' },
+          '403': { description: 'Not authorised' },
+          '404': { description: 'Academy not found' },
+        },
+      },
+    },
     '/api/coaching/all': {
       get: {
         tags: ['Coaching'],

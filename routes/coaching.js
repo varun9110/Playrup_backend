@@ -279,6 +279,81 @@ router.get('/academy/:academyId', async (req, res) => {
   }
 });
 
+router.get('/academy/:academyId/programs', async (req, res) => {
+  try {
+    const { academyId } = req.params;
+    const { sport } = req.query;
+
+    const academy = await Academy.findById(academyId).select('userId name');
+    if (!academy) return res.status(404).json({ message: 'Academy not found' });
+    if (academy.userId.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ message: 'Not authorised' });
+    }
+
+    const filter = { academyId, status: 'Active' };
+    if (sport) filter.sport = sport;
+
+    const sessions = await Coaching.find(filter)
+      .populate('joinedParticipants', 'name email')
+      .populate('pendingRequests', 'name email')
+      .sort({ date: 1, startTime: 1 });
+
+    // Group sessions into programs: series share a seriesId; standalone sessions are their own program
+    const programMap = new Map();
+
+    for (const session of sessions) {
+      const key = session.seriesId ? session.seriesId.toString() : session._id.toString();
+
+      if (!programMap.has(key)) {
+        programMap.set(key, {
+          programKey: key,
+          seriesId: session.seriesId || null,
+          representativeId: session._id,
+          sport: session.sport,
+          courtNumber: session.courtNumber,
+          title: session.title,
+          description: session.description,
+          skillLevel: session.skillLevel,
+          coachName: session.coachName,
+          coachBio: session.coachBio,
+          coachContact: session.coachContact,
+          startTime: session.startTime,
+          endTime: session.endTime,
+          pricePerParticipant: session.pricePerParticipant,
+          recurrenceType: session.recurrenceType,
+          recurrenceDays: session.recurrenceDays,
+          recurrenceUntil: session.recurrenceUntil,
+          firstDate: session.date,
+          lastDate: session.date,
+          totalSessions: 0,
+          joinedCount: 0,
+          pendingCount: 0,
+          shareCode: session.shareCode,
+          sessions: [],
+        });
+      }
+
+      const program = programMap.get(key);
+      program.totalSessions += 1;
+      program.joinedCount += (session.joinedParticipants || []).length;
+      program.pendingCount += (session.pendingRequests || []).length;
+      if (session.date > program.lastDate) program.lastDate = session.date;
+      program.sessions.push({
+        _id: session._id,
+        date: session.date,
+        joinedParticipants: session.joinedParticipants || [],
+        pendingRequests: session.pendingRequests || [],
+      });
+    }
+
+    const programs = Array.from(programMap.values());
+    return res.json({ programs });
+  } catch (error) {
+    console.error('Coaching programs list error:', error);
+    return res.status(500).json({ message: 'Server error' });
+  }
+});
+
 router.get('/all', async (req, res) => {
   try {
     const { sport } = req.query;
