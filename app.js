@@ -12,6 +12,7 @@ const requestRoutes = require('./routes/request');
 const dashboardRoutes = require('./routes/dashboard');
 const userRoutes = require('./routes/user');
 const notificationRoutes = require('./routes/notification');
+const publicRoutes = require('./routes/public');
 const { authenticateToken } = require('./middleware/authMiddleware');
 const setupSwagger = require('./swagger');
 const { initActivityCompletionSubscriber } = require('./events/activityCompletionSubscriber');
@@ -35,6 +36,7 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 setupSwagger(app);
 app.use(['/api/auth', '/auth'], authRoutes);
+app.use('/api/public', publicRoutes);
 app.use(authenticateToken);
 app.use('/api/academy', academyRoutes);
 app.use('/api/booking', bookingRoutes);

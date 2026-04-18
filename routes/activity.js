@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const multer = require('multer');
@@ -50,6 +51,27 @@ const chatImageUpload = multer({
 });
 
 const typingByActivity = new Map();
+
+const generateShareCode = () => crypto.randomBytes(8).toString('hex');
+
+const ensureActivityShareCode = async (activity) => {
+  if (activity.shareCode) return activity.shareCode;
+
+  // Best-effort generation for legacy activities created before share links existed.
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    activity.shareCode = generateShareCode();
+    try {
+      await activity.save();
+      return activity.shareCode;
+    } catch (error) {
+      if (error?.code !== 11000) {
+        throw error;
+      }
+    }
+  }
+
+  throw new Error('Unable to generate a unique activity share code');
+};
 
 const toIdString = (value) => value?.toString?.() || String(value);
 const extractIdString = (value) => {
@@ -252,6 +274,7 @@ router.post('/createActivity', async (req, res) => {
     const newActivity = await Activity.create({
       hostEmail: userEmailDecrypted,
       hostId: userIdDecrypted,
+      shareCode: generateShareCode(),
       city,
       location,
       sport,
@@ -306,7 +329,8 @@ router.get('/allActivities', async (req, res) => {
         return aTime - bTime;
       });
 
-    const activitiesWithEncryptedData = activities.map(activity => {
+    const activitiesWithEncryptedData = await Promise.all(activities.map(async (activity) => {
+      await ensureActivityShareCode(activity);
       const activityObj = activity.toObject();
       const { hostEmail, hostId, ...rest } = activityObj;
 
@@ -339,7 +363,7 @@ router.get('/allActivities', async (req, res) => {
           name: activityObj.hostId.name
         }
       };
-    });
+    }));
 
     res.json(activitiesWithEncryptedData);
 
@@ -590,7 +614,8 @@ router.post('/userActivities', async (req, res) => {
       return bTime - aTime;
     });
 
-    const activitiesWithEncryptedData = activities.map(activity => {
+    const activitiesWithEncryptedData = await Promise.all(activities.map(async (activity) => {
+      await ensureActivityShareCode(activity);
       const activityObj = activity.toObject();
       const { hostEmail, hostId, ...rest } = activityObj;
 
@@ -615,7 +640,7 @@ router.post('/userActivities', async (req, res) => {
           name: activityObj.hostId.name
         }
       };
-    });
+    }));
 
     res.status(200).json({ activitiesWithEncryptedData });
   } catch (error) {
@@ -641,7 +666,7 @@ router.get('/:activityId/participants', async (req, res) => {
     );
 
     const participants = await User.find({ _id: { $in: uniqueParticipantIds } })
-      .select('name email')
+      .select('name')
       .lean();
 
     const participantById = new Map(participants.map((participant) => [toIdString(participant._id), participant]));
@@ -654,7 +679,7 @@ router.get('/:activityId/participants', async (req, res) => {
         return {
           id: encrypt(participantId),
           name: participant.name,
-          email: participant.email,
+          avatarUrl: null,
           isHost: participantId === extractIdString(activity.hostId)
         };
       })

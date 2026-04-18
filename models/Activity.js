@@ -18,6 +18,7 @@ const playerFeedbackSchema = new mongoose.Schema({
 const activitySchema = new mongoose.Schema({
   hostEmail: { type: String, required: true },
   hostId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  shareCode: { type: String, unique: true, sparse: true },
   city: { type: String },
   location: { type: String },
   sport: { type: String, required: true },

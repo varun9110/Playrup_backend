@@ -157,6 +157,66 @@ const swaggerSpec = {
         type: 'object',
         additionalProperties: true,
       },
+      PublicParticipant: {
+        type: 'object',
+        properties: {
+          id: { type: 'object', additionalProperties: true },
+          name: { type: 'string' },
+          avatarUrl: { type: 'string', nullable: true },
+          isHost: { type: 'boolean' },
+        },
+      },
+      PublicActivityResponse: {
+        type: 'object',
+        properties: {
+          activity: {
+            type: 'object',
+            properties: {
+              id: { type: 'string' },
+              shareCode: { type: 'string' },
+              name: { type: 'string' },
+              description: { type: 'string' },
+              sport: { type: 'string' },
+              city: { type: 'string' },
+              location: { type: 'string' },
+              address: { type: 'string' },
+              date: { type: 'string' },
+              fromTime: { type: 'string' },
+              toTime: { type: 'string' },
+              status: { type: 'string' },
+              maxPlayers: { type: 'integer' },
+              slotsRemaining: { type: 'integer' },
+              participants: {
+                type: 'array',
+                items: { $ref: '#/components/schemas/PublicParticipant' },
+              },
+              host: {
+                type: 'object',
+                properties: {
+                  id: { type: 'object', additionalProperties: true, nullable: true },
+                  name: { type: 'string' },
+                },
+              },
+            },
+          },
+        },
+      },
+      PublicUserProfileResponse: {
+        type: 'object',
+        properties: {
+          user: {
+            type: 'object',
+            properties: {
+              id: { type: 'object', additionalProperties: true },
+              name: { type: 'string' },
+              avatarUrl: { type: 'string', nullable: true },
+              joinedOn: { type: 'string', format: 'date-time' },
+              pastActivities: { type: 'integer' },
+              skillLevel: { type: 'string' },
+            },
+          },
+        },
+      },
     },
   },
   paths: {
@@ -471,6 +531,66 @@ const swaggerSpec = {
         responses: {
           '200': { description: 'Activity participants returned' },
           '404': { description: 'Activity not found' },
+        },
+      },
+    },
+    '/api/public/activity/{shareCode}': {
+      get: {
+        tags: ['Public Activity'],
+        summary: 'Get public activity details by share code (no auth required)',
+        parameters: [
+          {
+            name: 'shareCode',
+            in: 'path',
+            required: true,
+            schema: { type: 'string' },
+          },
+        ],
+        responses: {
+          '200': {
+            description: 'Public activity details returned',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/PublicActivityResponse' },
+              },
+            },
+          },
+          '404': { description: 'Activity not found' },
+        },
+      },
+    },
+    '/api/public/user/profile-summary': {
+      post: {
+        tags: ['Public Activity'],
+        summary: 'Get public-safe participant profile details (no auth required)',
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  userId: {
+                    type: 'object',
+                    description: 'Encrypted user id from public participants payload',
+                    additionalProperties: true,
+                  },
+                },
+                required: ['userId'],
+              },
+            },
+          },
+        },
+        responses: {
+          '200': {
+            description: 'Public profile returned',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/PublicUserProfileResponse' },
+              },
+            },
+          },
+          '404': { description: 'User not found' },
         },
       },
     },

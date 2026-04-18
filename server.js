@@ -10,6 +10,7 @@ app.use(express.json());
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 const authRoutes = require('./routes/auth');
+const publicRoutes = require('./routes/public');
 const { authenticateToken } = require('./middleware/authMiddleware');
 const setupSwagger = require('./swagger');
 const { initActivityCompletionSubscriber } = require('./events/activityCompletionSubscriber');
@@ -26,6 +27,7 @@ ensureDefaultTemplates().catch((error) => {
 
 setupSwagger(app);
 app.use(['/api/auth', '/auth'], authRoutes);
+app.use('/api/public', publicRoutes);
 app.use(authenticateToken);
 
 const academyRoutes = require('./routes/academy');
