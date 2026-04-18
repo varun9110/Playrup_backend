@@ -2,6 +2,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 const router = express.Router();
 const Booking = require('../models/Booking');
+const DropIn = require('../models/DropIn');
 const Academy = require('../models/Academy');
 const User = require('../models/User');
 const { createNotification } = require('../services/notificationService');
@@ -60,6 +61,16 @@ router.post('/create', async (req, res) => {
       const bookingEnd = timeToMinutes(b.endTime);
       if (isTimeOverlap(requestedStart, requestedEnd, bookingStart, bookingEnd)) {
         return res.status(400).json({ message: 'Slot already booked' });
+      }
+    }
+
+    // Check for active drop-in sessions blocking this slot
+    const dropIns = await DropIn.find({ academyId, sport, courtNumber, date, status: 'Active' });
+    for (let di of dropIns) {
+      const diStart = timeToMinutes(di.startTime);
+      const diEnd = timeToMinutes(di.endTime);
+      if (isTimeOverlap(requestedStart, requestedEnd, diStart, diEnd)) {
+        return res.status(400).json({ message: 'Slot is reserved for a Drop-In session' });
       }
     }
 
@@ -189,6 +200,20 @@ router.post('/check-availability', async (req, res) => {
         if (isTimeOverlap(requestedStart, requestedEnd, bookingStart, bookingEnd)) {
           available = false;
           break;
+        }
+      }
+
+      // Check for active drop-in sessions blocking this slot
+      if (available) {
+        const dropIns = await DropIn.find({
+          academyId,
+          sport,
+          courtNumber: i,
+          date,
+          status: 'Active',
+        });
+        if (dropIns.some(di => isTimeOverlap(requestedStart, requestedEnd, timeToMinutes(di.startTime), timeToMinutes(di.endTime)))) {
+          available = false;
         }
       }
 

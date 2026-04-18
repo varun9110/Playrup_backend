@@ -30,8 +30,50 @@ function attachTokenRefreshResponse(res) {
 async function authenticateToken(req, res, next) {
   attachTokenRefreshResponse(res);
 
+  const isPublicDropInShareRoute =
+    req.method === 'GET' && /^\/api\/dropin\/share\/[^/]+$/.test(req.path);
+
   const rawHeader = req.headers.authorization || req.headers['x-access-token'] || req.headers.token;
   const token = rawHeader && rawHeader.startsWith('Bearer ') ? rawHeader.slice(7) : rawHeader;
+
+  if (isPublicDropInShareRoute) {
+    // Keep share links publicly accessible while attaching req.user when a valid token is present.
+    if (!token) {
+      return next();
+    }
+
+    try {
+      const decoded = jwt.verify(token, JWT_SECRET, { ignoreExpiration: true });
+      if (!decoded?.id) {
+        return next();
+      }
+
+      const user = await User.findById(decoded.id);
+      if (!user || !user.token || user.token !== token) {
+        return next();
+      }
+
+      const nowMs = Date.now();
+      const expiresAtMs = decoded.exp ? decoded.exp * 1000 : 0;
+      if (expiresAtMs && nowMs >= expiresAtMs) {
+        return next();
+      }
+
+      const refreshThresholdMs = TOKEN_REFRESH_THRESHOLD_MINUTES * 60 * 1000;
+      if (expiresAtMs && expiresAtMs - nowMs <= refreshThresholdMs) {
+        const refreshedToken = issueToken(user);
+        user.token = refreshedToken;
+        user.tokenExpiry = getTokenExpiryDate();
+        await user.save();
+        res.locals.newToken = refreshedToken;
+      }
+
+      req.user = user;
+      return next();
+    } catch {
+      return next();
+    }
+  }
 
   if (!token) {
     return res.status(401).json({ message: 'Authorization token required', error: 'Token required' });

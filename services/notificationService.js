@@ -27,6 +27,30 @@ const DEFAULT_TEMPLATES = [
     channels: { push: true, email: true, sms: false }
   },
   {
+    key: 'dropin.joinRequest.sent.forAcademy',
+    title: 'New drop-in join request',
+    body: '{{userName}} requested to join your {{sport}} drop-in on {{date}} at {{startTime}}.',
+    channels: { push: true, email: true, sms: false }
+  },
+  {
+    key: 'dropin.request.accepted.forParticipant',
+    title: 'Drop-in request accepted',
+    body: '{{academyName}} accepted your request for the {{sport}} drop-in on {{date}} at {{startTime}}.',
+    channels: { push: true, email: true, sms: false }
+  },
+  {
+    key: 'dropin.request.rejected.forParticipant',
+    title: 'Drop-in request rejected',
+    body: 'Your request for the {{sport}} drop-in on {{date}} at {{startTime}} was rejected by {{academyName}}.',
+    channels: { push: true, email: false, sms: false }
+  },
+  {
+    key: 'dropin.participant.removed.forParticipant',
+    title: 'Removed from drop-in',
+    body: '{{academyName}} removed you from the {{sport}} drop-in on {{date}} at {{startTime}}.',
+    channels: { push: true, email: false, sms: false }
+  },
+  {
     key: 'activity.cancelled.byHost.forParticipants',
     title: 'Activity cancelled by host',
     body: '{{hostName}} cancelled the {{sport}} activity scheduled for {{date}} at {{fromTime}}.',

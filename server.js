@@ -51,6 +51,9 @@ app.use('/api/user', userRoutes);
 const notificationRoutes = require('./routes/notification');
 app.use('/api/notification', notificationRoutes);
 
+const dropInRoutes = require('./routes/dropIn');
+app.use('/api/dropin', dropInRoutes);
+
 const PORT = process.env.PORT || 5000;
 
 mongoose.connect(process.env.MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true })

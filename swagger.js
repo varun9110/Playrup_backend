@@ -1482,6 +1482,264 @@ const swaggerSpec = {
         },
       },
     },
+
+    // ─── Drop-In ────────────────────────────────────────────────────────────
+    '/api/dropin/create': {
+      post: {
+        tags: ['Drop-In'],
+        summary: 'Academy creates one or more drop-in sessions (with optional recurrence)',
+        security: [{ BearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  academyId: { type: 'string' },
+                  sport: { type: 'string' },
+                  courtNumber: { type: 'integer' },
+                  title: { type: 'string' },
+                  description: { type: 'string' },
+                  skillLevel: { type: 'string' },
+                  date: { type: 'string', format: 'date', description: 'First occurrence date (YYYY-MM-DD)' },
+                  startTime: { type: 'string', description: 'HH:MM' },
+                  endTime: { type: 'string', description: 'HH:MM' },
+                  maxParticipants: { type: 'integer' },
+                  pricePerParticipant: { type: 'number' },
+                  recurrenceType: { type: 'string', enum: ['none', 'daily', 'weekly'], default: 'none' },
+                  recurrenceDays: {
+                    type: 'array',
+                    items: { type: 'integer', minimum: 0, maximum: 6 },
+                    description: 'Days of week (0=Sun … 6=Sat) for weekly recurrence',
+                  },
+                  recurrenceUntil: { type: 'string', format: 'date', description: 'Last date to generate instances (YYYY-MM-DD)' },
+                },
+                required: ['academyId', 'sport', 'courtNumber', 'date', 'startTime', 'endTime', 'maxParticipants'],
+              },
+            },
+          },
+        },
+        responses: {
+          '201': { description: 'Drop-in session(s) created' },
+          '400': { description: 'Validation error or slot conflict' },
+          '403': { description: 'Not authorised to manage this academy' },
+          '404': { description: 'Academy or sport not found' },
+        },
+      },
+    },
+    '/api/dropin/academy/{academyId}': {
+      get: {
+        tags: ['Drop-In'],
+        summary: 'Get all active drop-ins for an academy (for calendar view)',
+        security: [{ BearerAuth: [] }],
+        parameters: [
+          { name: 'academyId', in: 'path', required: true, schema: { type: 'string' } },
+          { name: 'startDate', in: 'query', required: false, schema: { type: 'string', format: 'date' } },
+          { name: 'endDate', in: 'query', required: false, schema: { type: 'string', format: 'date' } },
+          { name: 'sport', in: 'query', required: false, schema: { type: 'string' } },
+        ],
+        responses: {
+          '200': { description: 'Drop-ins returned' },
+          '403': { description: 'Not authorised' },
+          '404': { description: 'Academy not found' },
+        },
+      },
+    },
+    '/api/dropin/all': {
+      get: {
+        tags: ['Drop-In'],
+        summary: 'Get all active upcoming drop-ins for user discovery',
+        security: [{ BearerAuth: [] }],
+        parameters: [
+          { name: 'sport', in: 'query', required: false, schema: { type: 'string' } },
+        ],
+        responses: {
+          '200': { description: 'Drop-ins returned' },
+        },
+      },
+    },
+    '/api/dropin/user-activities': {
+      get: {
+        tags: ['Drop-In'],
+        summary: 'Get drop-ins joined by the authenticated user',
+        security: [{ BearerAuth: [] }],
+        responses: {
+          '200': { description: 'Joined drop-ins returned' },
+        },
+      },
+    },
+    '/api/dropin/share/{shareCode}': {
+      get: {
+        tags: ['Drop-In'],
+        summary: 'Get drop-in details by share code (public/user view)',
+        security: [{ BearerAuth: [] }],
+        parameters: [
+          { name: 'shareCode', in: 'path', required: true, schema: { type: 'string' } },
+        ],
+        responses: {
+          '200': { description: 'Drop-in details returned' },
+          '404': { description: 'Drop-in not found or not active' },
+        },
+      },
+    },
+    '/api/dropin/{dropInId}': {
+      get: {
+        tags: ['Drop-In'],
+        summary: 'Get a single drop-in by ID',
+        security: [{ BearerAuth: [] }],
+        parameters: [
+          { name: 'dropInId', in: 'path', required: true, schema: { type: 'string' } },
+        ],
+        responses: {
+          '200': { description: 'Drop-in returned' },
+          '404': { description: 'Drop-in not found' },
+        },
+      },
+      put: {
+        tags: ['Drop-In'],
+        summary: 'Academy edits a drop-in occurrence or updates this-and-future series',
+        security: [{ BearerAuth: [] }],
+        parameters: [
+          { name: 'dropInId', in: 'path', required: true, schema: { type: 'string' } },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  scope: { type: 'string', enum: ['single', 'future'], default: 'single' },
+                  sport: { type: 'string' },
+                  courtNumber: { type: 'integer' },
+                  title: { type: 'string' },
+                  description: { type: 'string' },
+                  skillLevel: { type: 'string' },
+                  date: { type: 'string', format: 'date' },
+                  startTime: { type: 'string', example: '18:00' },
+                  endTime: { type: 'string', example: '19:30' },
+                  maxParticipants: { type: 'integer' },
+                  pricePerParticipant: { type: 'number' },
+                  recurrenceType: { type: 'string', enum: ['none', 'daily', 'weekly'] },
+                  recurrenceDays: { type: 'array', items: { type: 'integer', minimum: 0, maximum: 6 } },
+                  recurrenceUntil: { type: 'string', format: 'date' },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          '200': { description: 'Drop-in updated successfully' },
+          '400': { description: 'Validation error or slot conflict' },
+          '403': { description: 'Not authorised' },
+          '404': { description: 'Drop-in not found' },
+        },
+      },
+      delete: {
+        tags: ['Drop-In'],
+        summary: 'Academy cancels a single drop-in occurrence',
+        security: [{ BearerAuth: [] }],
+        parameters: [
+          { name: 'dropInId', in: 'path', required: true, schema: { type: 'string' } },
+        ],
+        responses: {
+          '200': { description: 'Drop-in cancelled' },
+          '403': { description: 'Not authorised' },
+          '404': { description: 'Drop-in not found' },
+        },
+      },
+    },
+    '/api/dropin/series/{seriesId}/from/{fromDate}': {
+      delete: {
+        tags: ['Drop-In'],
+        summary: 'Academy cancels all future occurrences in a series from a given date',
+        security: [{ BearerAuth: [] }],
+        parameters: [
+          { name: 'seriesId', in: 'path', required: true, schema: { type: 'string' } },
+          { name: 'fromDate', in: 'path', required: true, schema: { type: 'string', format: 'date' } },
+        ],
+        responses: {
+          '200': { description: 'Future series occurrences cancelled' },
+          '403': { description: 'Not authorised' },
+          '404': { description: 'Series not found' },
+        },
+      },
+    },
+    '/api/dropin/{dropInId}/share-link': {
+      get: {
+        tags: ['Drop-In'],
+        summary: 'Get (or generate) the share code for a drop-in',
+        security: [{ BearerAuth: [] }],
+        parameters: [
+          { name: 'dropInId', in: 'path', required: true, schema: { type: 'string' } },
+        ],
+        responses: {
+          '200': {
+            description: 'Share code returned',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: { shareCode: { type: 'string' } },
+                },
+              },
+            },
+          },
+          '403': { description: 'Not authorised' },
+          '404': { description: 'Drop-in not found' },
+        },
+      },
+    },
+    '/api/dropin/{dropInId}/request-join': {
+      post: {
+        tags: ['Drop-In'],
+        summary: 'User sends a join request for a drop-in',
+        security: [{ BearerAuth: [] }],
+        parameters: [
+          { name: 'dropInId', in: 'path', required: true, schema: { type: 'string' } },
+        ],
+        responses: {
+          '200': { description: 'Join request sent' },
+          '400': { description: 'Already joined, already requested, or drop-in full' },
+          '404': { description: 'Drop-in not found or not active' },
+        },
+      },
+    },
+    '/api/dropin/{dropInId}/approve/{userId}': {
+      post: {
+        tags: ['Drop-In'],
+        summary: 'Academy approves a pending join request',
+        security: [{ BearerAuth: [] }],
+        parameters: [
+          { name: 'dropInId', in: 'path', required: true, schema: { type: 'string' } },
+          { name: 'userId', in: 'path', required: true, schema: { type: 'string' } },
+        ],
+        responses: {
+          '200': { description: 'User approved' },
+          '400': { description: 'No pending request or drop-in full' },
+          '403': { description: 'Not authorised' },
+          '404': { description: 'Drop-in not found' },
+        },
+      },
+    },
+    '/api/dropin/{dropInId}/reject/{userId}': {
+      post: {
+        tags: ['Drop-In'],
+        summary: 'Academy rejects a pending request or removes an approved participant',
+        security: [{ BearerAuth: [] }],
+        parameters: [
+          { name: 'dropInId', in: 'path', required: true, schema: { type: 'string' } },
+          { name: 'userId', in: 'path', required: true, schema: { type: 'string' } },
+        ],
+        responses: {
+          '200': { description: 'Request rejected or participant removed' },
+          '400': { description: 'User not in pending or joined list' },
+          '403': { description: 'Not authorised' },
+          '404': { description: 'Drop-in not found' },
+        },
+      },
+    },
   },
 };
 
