@@ -15,6 +15,10 @@ const {
   decrypt,
   encrypt
 } = require('../utils/helperFunctions');
+const {
+  getResolvedRatesForSport,
+  hasCompleteRatePlan
+} = require('../utils/courtRatePlan');
 
 const isRequestedRangeUnavailable = (slotPrices = [], startMinutes, endMinutes) => {
   for (const slot of slotPrices) {
@@ -43,6 +47,21 @@ router.post('/create', async (req, res) => {
     const requestedEnd = requestedStart + duration;
     const academyStart = timeToMinutes(sportData.startTime);
     const academyEnd = timeToMinutes(sportData.endTime);
+
+    if (!hasCompleteRatePlan(sportData)) {
+      return res.status(400).json({ message: 'Academy must configure weekday and holiday rates before booking' });
+    }
+
+    const resolvedRates = getResolvedRatesForSport({
+      sportData,
+      date,
+      startTime,
+      academyTimezone: academy.timezone
+    });
+
+    if (resolvedRates.error) {
+      return res.status(400).json({ message: resolvedRates.error });
+    }
 
     if (requestedStart < academyStart || requestedEnd > academyEnd) {
       return res.status(400).json({ message: 'Requested time outside academy hours' });
@@ -85,16 +104,16 @@ router.post('/create', async (req, res) => {
       }
     }
 
-    const courtPricing = sportData.pricing.find(p => p.courtNumber === courtNumber);
+    const courtPricing = resolvedRates.activeCourts.find((p) => Number(p.courtNumber) === Number(courtNumber));
     if (!courtPricing) {
       return res.status(404).json({ message: 'Court pricing not found' });
     }
 
-    if (isRequestedRangeUnavailable(courtPricing.prices, requestedStart, requestedEnd)) {
+    if (isRequestedRangeUnavailable(courtPricing.rates, requestedStart, requestedEnd)) {
       return res.status(400).json({ message: 'Selected slot is marked unavailable by academy' });
     }
 
-    const price = calculatePrice(courtPricing.prices, startTime, duration);
+    const price = calculatePrice(courtPricing.rates, resolvedRates.localStartTime, duration);
 
     const userEmailDecrypted = decrypt(userEmail);
     const userIdDecrypted = decrypt(userId);
@@ -162,9 +181,14 @@ router.post('/search', async (req, res) => {
       "sports.sportName": sport
     });
 
+    const configuredAcademies = academies.filter((academy) => {
+      const sportData = academy.sports.find((s) => s.sportName === sport);
+      return hasCompleteRatePlan(sportData);
+    });
+
     // Optional: You could filter out academies that have no available courts
     // but that's usually done in check-availability endpoint
-    res.status(200).json({ academies });
+    res.status(200).json({ academies: configuredAcademies });
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: 'Search failed' });
@@ -187,6 +211,21 @@ router.post('/check-availability', async (req, res) => {
     const requestedEnd = requestedStart + duration;
     const academyStart = timeToMinutes(sportData.startTime);
     const academyEnd = timeToMinutes(sportData.endTime);
+
+    if (!hasCompleteRatePlan(sportData)) {
+      return res.status(400).json({ message: 'Academy must configure weekday and holiday rates before booking' });
+    }
+
+    const resolvedRates = getResolvedRatesForSport({
+      sportData,
+      date,
+      startTime,
+      academyTimezone: academy.timezone
+    });
+
+    if (resolvedRates.error) {
+      return res.status(400).json({ message: resolvedRates.error });
+    }
 
     for (let i = 1; i <= sportData.numberOfCourts; i++) {
       // Ignore times outside academy hours
@@ -243,20 +282,30 @@ router.post('/check-availability', async (req, res) => {
 
       let price = 0;
       if (available) {
-        const courtPricing = sportData.pricing.find(p => p.courtNumber === i);
+        const courtPricing = resolvedRates.activeCourts.find((p) => Number(p.courtNumber) === i);
         if (courtPricing) {
-          if (isRequestedRangeUnavailable(courtPricing.prices, requestedStart, requestedEnd)) {
+          if (isRequestedRangeUnavailable(courtPricing.rates, requestedStart, requestedEnd)) {
             available = false;
           } else {
-            price = calculatePrice(courtPricing.prices, startTime, duration);
+            price = calculatePrice(courtPricing.rates, resolvedRates.localStartTime, duration);
           }
+        } else {
+          available = false;
         }
       }
 
       courts.push({ courtNumber: i, available, price });
     }
 
-    res.json({ courts });
+    res.json({
+      courts,
+      rateContext: {
+        rateType: resolvedRates.rateType,
+        weekday: resolvedRates.weekday,
+        localDate: resolvedRates.localDateKey,
+        timezone: resolvedRates.timezone
+      }
+    });
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Server error' });
@@ -453,15 +502,30 @@ router.patch('/modify-booking', async (req, res) => {
       }
     }
 
+    if (!hasCompleteRatePlan(sportData)) {
+      return res.status(400).json({ message: 'Academy must configure weekday and holiday rates before booking' });
+    }
+
+    const resolvedRates = getResolvedRatesForSport({
+      sportData,
+      date,
+      startTime,
+      academyTimezone: academy.timezone
+    });
+
+    if (resolvedRates.error) {
+      return res.status(400).json({ message: resolvedRates.error });
+    }
+
     // Calculate new price
-    const courtPricing = sportData.pricing.find(p => p.courtNumber === courtNumber);
+    const courtPricing = resolvedRates.activeCourts.find((p) => Number(p.courtNumber) === Number(courtNumber));
     if (!courtPricing) return res.status(404).json({ message: 'Court pricing not found' });
 
-    if (isRequestedRangeUnavailable(courtPricing.prices, requestedStart, requestedEnd)) {
+    if (isRequestedRangeUnavailable(courtPricing.rates, requestedStart, requestedEnd)) {
       return res.status(400).json({ message: 'Selected slot is marked unavailable by academy' });
     }
 
-    const price = calculatePrice(courtPricing.prices, startTime, duration);
+    const price = calculatePrice(courtPricing.rates, resolvedRates.localStartTime, duration);
 
     // Update booking
     booking.date = date;

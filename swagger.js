@@ -422,7 +422,7 @@ const swaggerSpec = {
     '/api/academy/configure': {
       post: {
         tags: ['Academy'],
-        summary: 'Configure academy settings using academyId or legacy owner email',
+        summary: 'Configure academy sports with weekday and public holiday court rates',
         requestBody: {
           required: true,
           content: {
@@ -431,14 +431,81 @@ const swaggerSpec = {
                 type: 'object',
                 properties: {
                   academyId: { type: 'string' },
+                  timezone: { type: 'string', example: 'Asia/Kolkata' },
                   email: { type: 'string', description: 'Legacy encrypted owner email' },
                   userId: { type: 'string', description: 'Legacy encrypted owner userId' },
                   sports: {
                     type: 'array',
-                    items: { type: 'object' },
+                    items: {
+                      type: 'object',
+                      properties: {
+                        sportName: { type: 'string' },
+                        numberOfCourts: { type: 'integer', minimum: 1 },
+                        startTime: { type: 'string', example: '06:00' },
+                        endTime: { type: 'string', example: '22:00' },
+                        ratePlan: {
+                          type: 'object',
+                          properties: {
+                            publicHolidayDates: {
+                              type: 'array',
+                              items: { type: 'string', format: 'date' },
+                            },
+                            weeklyRates: {
+                              type: 'array',
+                              items: {
+                                type: 'object',
+                                properties: {
+                                  weekday: { type: 'string', enum: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'] },
+                                  courts: {
+                                    type: 'array',
+                                    items: {
+                                      type: 'object',
+                                      properties: {
+                                        courtNumber: { type: 'integer' },
+                                        rates: {
+                                          type: 'array',
+                                          items: {
+                                            type: 'object',
+                                            properties: {
+                                              time: { type: 'string', example: '10:00' },
+                                              price: { type: 'number', example: 500 },
+                                              unavailable: { type: 'boolean' },
+                                            },
+                                          },
+                                        },
+                                      },
+                                    },
+                                  },
+                                },
+                              },
+                            },
+                            holidayRates: {
+                              type: 'array',
+                              items: {
+                                type: 'object',
+                                properties: {
+                                  courtNumber: { type: 'integer' },
+                                  rates: {
+                                    type: 'array',
+                                    items: {
+                                      type: 'object',
+                                      properties: {
+                                        time: { type: 'string' },
+                                        price: { type: 'number' },
+                                        unavailable: { type: 'boolean' },
+                                      },
+                                    },
+                                  },
+                                },
+                              },
+                            },
+                          },
+                        },
+                      },
+                    },
                   },
                 },
-                required: ['sports'],
+                required: ['academyId', 'timezone', 'sports'],
               },
             },
           },
@@ -500,7 +567,7 @@ const swaggerSpec = {
     '/api/academy/getCourts': {
       get: {
         tags: ['Academy'],
-        summary: 'Get courts list for an academy',
+        summary: 'Get courts list and resolved date-based rates for an academy sport',
         parameters: [
           {
             name: 'academyId',
@@ -519,6 +586,13 @@ const swaggerSpec = {
             in: 'query',
             required: true,
             schema: { type: 'string' },
+          },
+          {
+            name: 'date',
+            in: 'query',
+            required: false,
+            schema: { type: 'string', format: 'date' },
+            description: 'Optional UTC date to resolve weekday/public-holiday rates',
           },
         ],
         responses: { '200': { description: 'Courts returned' } },
@@ -1269,7 +1343,7 @@ const swaggerSpec = {
     '/api/booking/create': {
       post: {
         tags: ['Booking'],
-        summary: 'Create a booking',
+        summary: 'Create a booking using resolved academy local weekday/public-holiday rates',
         requestBody: {
           required: true,
           content: {
@@ -1299,7 +1373,7 @@ const swaggerSpec = {
     '/api/booking/check-availability': {
       post: {
         tags: ['Booking'],
-        summary: 'Check availability',
+        summary: 'Check availability and return date-resolved rates for each court',
         requestBody: {
           required: true,
           content: {
@@ -1308,7 +1382,40 @@ const swaggerSpec = {
             },
           },
         },
-        responses: { '200': { description: 'Availability returned' } },
+        responses: {
+          '200': {
+            description: 'Availability returned',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    courts: {
+                      type: 'array',
+                      items: {
+                        type: 'object',
+                        properties: {
+                          courtNumber: { type: 'integer' },
+                          available: { type: 'boolean' },
+                          price: { type: 'number' },
+                        },
+                      },
+                    },
+                    rateContext: {
+                      type: 'object',
+                      properties: {
+                        rateType: { type: 'string', enum: ['weekday', 'holiday'] },
+                        weekday: { type: 'string' },
+                        localDate: { type: 'string', format: 'date' },
+                        timezone: { type: 'string' },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
       },
     },
     '/api/booking/my-bookings': {

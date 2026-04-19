@@ -14,6 +14,12 @@ const DropIn = require('../models/DropIn');
 const Coaching = require('../models/Coaching');
 const User = require('../models/User');
 const { capitalizeWords, decrypt, encrypt } = require('../utils/helperFunctions');
+const {
+  CONFIG_WEEKDAY_KEYS,
+  normalizeDateKey,
+  getResolvedRatesForSport,
+  hasCompleteRatePlan
+} = require('../utils/courtRatePlan');
 
 const academyPhotoUploadDir = path.join(__dirname, '..', 'uploads', 'academy-photos');
 if (!fs.existsSync(academyPhotoUploadDir)) {
@@ -79,6 +85,51 @@ const findAcademyForOwner = async ({ academyId, email, userId }) => {
 
 const getFrontendBaseUrl = () => {
   return process.env.FRONTEND_URL || process.env.CLIENT_URL || 'http://localhost:5173';
+};
+
+const validateSportRatePlan = (sport) => {
+  const plan = sport?.ratePlan;
+  if (!plan) {
+    return 'ratePlan is required for every sport';
+  }
+
+  const weeklyRates = Array.isArray(plan.weeklyRates) ? plan.weeklyRates : [];
+  const holidayRates = Array.isArray(plan.holidayRates) ? plan.holidayRates : [];
+  const holidayDates = Array.isArray(plan.publicHolidayDates) ? plan.publicHolidayDates : [];
+  const numberOfCourts = Number(sport?.numberOfCourts || 0);
+
+  if (numberOfCourts < 1) {
+    return 'numberOfCourts must be at least 1';
+  }
+
+  const seenWeekdays = new Set();
+  for (const dayConfig of weeklyRates) {
+    const weekday = String(dayConfig?.weekday || '').toLowerCase();
+    if (!CONFIG_WEEKDAY_KEYS.includes(weekday)) {
+      return 'Invalid weekday found in weeklyRates';
+    }
+    seenWeekdays.add(weekday);
+    const dayCourts = Array.isArray(dayConfig?.courts) ? dayConfig.courts : [];
+    if (dayCourts.length !== numberOfCourts) {
+      return `All weekdays must include rates for ${numberOfCourts} courts`;
+    }
+  }
+
+  if (seenWeekdays.size !== CONFIG_WEEKDAY_KEYS.length) {
+    return 'weeklyRates must contain all 7 weekdays';
+  }
+
+  if (holidayRates.length !== numberOfCourts) {
+    return `holidayRates must include rates for ${numberOfCourts} courts`;
+  }
+
+  for (const dateKey of holidayDates) {
+    if (!normalizeDateKey(dateKey)) {
+      return 'publicHolidayDates must use YYYY-MM-DD format';
+    }
+  }
+
+  return null;
 };
 
 const getAcademyOnboardingLink = (token) => {
@@ -477,7 +528,7 @@ router.post('/verify-onboarding', async (req, res) => {
  *         description: Server error
  */
 router.post('/configure', async (req, res) => {
-  const { email, userId, sports, academyId } = req.body;
+  const { email, userId, sports, academyId, timezone } = req.body;
 
   try {
     let userEmail = null;
@@ -496,7 +547,24 @@ router.post('/configure', async (req, res) => {
       return res.status(403).json({ message: 'Academy is pending verification' });
     }
 
+    const academyTimezone = String(timezone || academy.timezone || '').trim();
+    if (!academyTimezone) {
+      return res.status(400).json({ message: 'Academy timezone is required to configure rates' });
+    }
+
+    if (!Array.isArray(sports) || sports.length === 0) {
+      return res.status(400).json({ message: 'At least one sport configuration is required' });
+    }
+
+    for (const sport of sports) {
+      const validationError = validateSportRatePlan(sport);
+      if (validationError) {
+        return res.status(400).json({ message: validationError, sportName: sport?.sportName || '' });
+      }
+    }
+
     academy.sports = sports;
+    academy.timezone = academyTimezone;
     await academy.save();
 
     res.json({ message: 'Academy updated successfully.' });
@@ -748,7 +816,7 @@ router.get("/getAcademies", async (req, res) => {
  */
 router.get("/getCourts", async (req, res) => {
   try {
-    const { email, sport, academyId } = req.query;
+    const { email, sport, academyId, date } = req.query;
 
     if ((!email && !academyId) || !sport) {
       return res.status(400).json({
@@ -780,10 +848,39 @@ router.get("/getCourts", async (req, res) => {
       });
     }
 
+    const startTimeForResolution = sportData.startTime || '00:00';
+    let resolvedRateContext = null;
+    let resolvedCourts = [];
+
+    if (date && hasCompleteRatePlan(sportData)) {
+      const resolvedRates = getResolvedRatesForSport({
+        sportData,
+        date,
+        startTime: startTimeForResolution,
+        academyTimezone: academy.timezone
+      });
+
+      if (resolvedRates.error) {
+        return res.status(400).json({ message: resolvedRates.error, success: false });
+      }
+
+      resolvedCourts = resolvedRates.activeCourts;
+      resolvedRateContext = {
+        rateType: resolvedRates.rateType,
+        localDate: resolvedRates.localDateKey,
+        weekday: resolvedRates.weekday,
+        timezone: resolvedRates.timezone
+      };
+    }
+
     res.status(200).json({
       academy: academy.name,
       sport: sportData.sportName,
-      courts: sportData.pricing, // contains courtNumber and prices array
+      courts: hasCompleteRatePlan(sportData)
+        ? (resolvedCourts.length ? resolvedCourts : sportData.ratePlan.holidayRates)
+        : Array.from({ length: sportData.numberOfCourts }, (_, idx) => ({ courtNumber: idx + 1, rates: [] })),
+      rateContext: resolvedRateContext,
+      ratePlanConfigured: hasCompleteRatePlan(sportData),
       success: true
     });
   } catch (err) {

@@ -1,16 +1,37 @@
 const mongoose = require('mongoose');
 
-const pricingSchema = new mongoose.Schema({
+const rateSlotSchema = new mongoose.Schema({
+  time: String,
+  price: Number,
+  unavailable: { type: Boolean, default: false }
+}, { _id: false });
+
+const courtRatesSchema = new mongoose.Schema({
   courtNumber: Number,
-  prices: [{ time: String, price: Number, unavailable: { type: Boolean, default: false } }]
-}, { timestamps: true });
+  rates: [rateSlotSchema]
+}, { _id: false });
+
+const weeklyRateSchema = new mongoose.Schema({
+  weekday: {
+    type: String,
+    enum: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'],
+    required: true
+  },
+  courts: [courtRatesSchema]
+}, { _id: false });
+
+const ratePlanSchema = new mongoose.Schema({
+  publicHolidayDates: [{ type: String }],
+  weeklyRates: [weeklyRateSchema],
+  holidayRates: [courtRatesSchema]
+}, { _id: false });
 
 const sportSchema = new mongoose.Schema({
   sportName: String,
   numberOfCourts: Number,
   startTime: String,
   endTime: String,
-  pricing: [pricingSchema]
+  ratePlan: { type: ratePlanSchema, default: () => ({}) }
 }, { timestamps: true });
 
 const amenitySchema = new mongoose.Schema({
@@ -31,6 +52,7 @@ const academySchema = new mongoose.Schema({
   phone: String,
   address: String,
   city: String,
+  timezone: { type: String, default: '' },
   status: { type: String, enum: ['active', 'pending_verification'], default: 'active' },
   onboardingVerificationTokenHash: { type: String, default: null },
   onboardingVerificationTokenExpiry: { type: Date, default: null },
