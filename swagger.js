@@ -324,6 +324,37 @@ const swaggerSpec = {
         },
       },
     },
+    '/auth/resend-otp': {
+      post: {
+        tags: ['Auth'],
+        summary: 'Resend OTP to phone number',
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  email: { type: 'string' },
+                },
+                required: ['email'],
+              },
+            },
+          },
+        },
+        responses: {
+          '200': { description: 'OTP resent to phone number' },
+          '400': {
+            description: 'Invalid request',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/ErrorResponse' },
+              },
+            },
+          },
+        },
+      },
+    },
     '/auth/login': {
       post: {
         tags: ['Auth'],

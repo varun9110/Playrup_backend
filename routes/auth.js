@@ -100,6 +100,32 @@ router.post('/verify-otp', async (req, res) => {
   }
 });
 
+router.post('/resend-otp', async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) {
+      return res.status(400).json({ message: 'Email is required', error: 'Email required' });
+    }
+
+    const normalizedEmail = normalizeEmail(email);
+    const user = await User.findOne({ email: normalizedEmail });
+    if (!user) return res.status(400).json({ message: 'User not found', error: 'User not found' });
+    if (user.isVerified) return res.status(400).json({ message: 'User already verified', error: 'User already verified' });
+
+    const otp = generateOTP();
+    const otpExpiry = new Date(Date.now() + 5 * 60 * 1000);
+    user.otp = otp;
+    user.otpExpiry = otpExpiry;
+    await user.save();
+    await sendOTP(user.phone, otp);
+
+    res.json({ message: 'OTP resent to phone number', success: 'otp resent' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error', error: 'Server error' });
+  }
+});
+
 router.post('/login', async (req, res) => {
   const { email, phone, password } = req.body;
   let user;
