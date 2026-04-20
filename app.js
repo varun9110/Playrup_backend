@@ -50,7 +50,7 @@ app.use('/api/notification', notificationRoutes);
 app.use('/api/dropin', dropInRoutes);
 app.use('/api/coaching', coachingRoutes);
 
-const mongoURI = process.env.MONGO_URI || 'mongodb://localhost:27017/otp-login-system';
+const mongoURI = process.env.MONGO_URI || 'mongodb://localhost:27017/playrup_db';
 
 mongoose.connect(mongoURI)
   .then(() => console.log('MongoDB connected'))

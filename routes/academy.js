@@ -302,6 +302,7 @@ router.post('/onboard-academy', async (req, res) => {
     }
 
     const passwordPlain = crypto.randomBytes(6).toString('hex'); // 12-char random password
+    console.log(`Generated password for new academy user (${normalizedEmail}): ${passwordPlain}`);
 
     let academyUser;
     if (!existingUser) {

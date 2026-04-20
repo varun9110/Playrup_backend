@@ -43,8 +43,8 @@ router.post('/create', async (req, res) => {
     const sportData = academy.sports.find(s => s.sportName === sport);
     if (!sportData) return res.status(404).json({ message: 'Sport not offered' });
 
-    const requestedStart = timeToMinutes(startTime);
-    const requestedEnd = requestedStart + duration;
+    const requestedStartUtc = timeToMinutes(startTime);
+    const requestedEndUtc = requestedStartUtc + duration;
     const academyStart = timeToMinutes(sportData.startTime);
     const academyEnd = timeToMinutes(sportData.endTime);
 
@@ -63,7 +63,10 @@ router.post('/create', async (req, res) => {
       return res.status(400).json({ message: resolvedRates.error });
     }
 
-    if (requestedStart < academyStart || requestedEnd > academyEnd) {
+    const requestedLocalStart = timeToMinutes(resolvedRates.localStartTime);
+    const requestedLocalEnd = requestedLocalStart + duration;
+
+    if (requestedLocalStart < academyStart || requestedLocalEnd > academyEnd) {
       return res.status(400).json({ message: 'Requested time outside academy hours' });
     }
 
@@ -79,7 +82,7 @@ router.post('/create', async (req, res) => {
     for (let b of bookings) {
       const bookingStart = timeToMinutes(b.startTime);
       const bookingEnd = timeToMinutes(b.endTime);
-      if (isTimeOverlap(requestedStart, requestedEnd, bookingStart, bookingEnd)) {
+      if (isTimeOverlap(requestedStartUtc, requestedEndUtc, bookingStart, bookingEnd)) {
         return res.status(400).json({ message: 'Slot already booked' });
       }
     }
@@ -89,7 +92,7 @@ router.post('/create', async (req, res) => {
     for (let di of dropIns) {
       const diStart = timeToMinutes(di.startTime);
       const diEnd = timeToMinutes(di.endTime);
-      if (isTimeOverlap(requestedStart, requestedEnd, diStart, diEnd)) {
+      if (isTimeOverlap(requestedStartUtc, requestedEndUtc, diStart, diEnd)) {
         return res.status(400).json({ message: 'Slot is reserved for a Drop-In session' });
       }
     }
@@ -99,7 +102,7 @@ router.post('/create', async (req, res) => {
     for (let session of coachingSessions) {
       const coachingStart = timeToMinutes(session.startTime);
       const coachingEnd = timeToMinutes(session.endTime);
-      if (isTimeOverlap(requestedStart, requestedEnd, coachingStart, coachingEnd)) {
+      if (isTimeOverlap(requestedStartUtc, requestedEndUtc, coachingStart, coachingEnd)) {
         return res.status(400).json({ message: 'Slot is reserved for a Coaching class' });
       }
     }
@@ -109,7 +112,7 @@ router.post('/create', async (req, res) => {
       return res.status(404).json({ message: 'Court pricing not found' });
     }
 
-    if (isRequestedRangeUnavailable(courtPricing.rates, requestedStart, requestedEnd)) {
+    if (isRequestedRangeUnavailable(courtPricing.rates, requestedLocalStart, requestedLocalEnd)) {
       return res.status(400).json({ message: 'Selected slot is marked unavailable by academy' });
     }
 
@@ -126,7 +129,7 @@ router.post('/create', async (req, res) => {
       courtNumber,
       date,
       startTime,
-      endTime: minutesToTime(requestedEnd),
+      endTime: minutesToTime(requestedEndUtc),
       price,
       status: 'Confirmed'
     });
@@ -207,8 +210,8 @@ router.post('/check-availability', async (req, res) => {
     if (!sportData) return res.status(404).json({ message: 'Sport not found in this academy' });
 
     const courts = [];
-    const requestedStart = timeToMinutes(startTime);
-    const requestedEnd = requestedStart + duration;
+    const requestedStartUtc = timeToMinutes(startTime);
+    const requestedEndUtc = requestedStartUtc + duration;
     const academyStart = timeToMinutes(sportData.startTime);
     const academyEnd = timeToMinutes(sportData.endTime);
 
@@ -227,9 +230,12 @@ router.post('/check-availability', async (req, res) => {
       return res.status(400).json({ message: resolvedRates.error });
     }
 
+    const requestedLocalStart = timeToMinutes(resolvedRates.localStartTime);
+    const requestedLocalEnd = requestedLocalStart + duration;
+
     for (let i = 1; i <= sportData.numberOfCourts; i++) {
       // Ignore times outside academy hours
-      if (requestedStart < academyStart || requestedEnd > academyEnd) {
+      if (requestedLocalStart < academyStart || requestedLocalEnd > academyEnd) {
         courts.push({ courtNumber: i, available: false, price: 0 });
         continue;
       }
@@ -247,7 +253,7 @@ router.post('/check-availability', async (req, res) => {
       for (let b of bookings) {
         const bookingStart = timeToMinutes(b.startTime);
         const bookingEnd = timeToMinutes(b.endTime);
-        if (isTimeOverlap(requestedStart, requestedEnd, bookingStart, bookingEnd)) {
+        if (isTimeOverlap(requestedStartUtc, requestedEndUtc, bookingStart, bookingEnd)) {
           available = false;
           break;
         }
@@ -262,7 +268,7 @@ router.post('/check-availability', async (req, res) => {
           date,
           status: 'Active',
         });
-        if (dropIns.some(di => isTimeOverlap(requestedStart, requestedEnd, timeToMinutes(di.startTime), timeToMinutes(di.endTime)))) {
+        if (dropIns.some(di => isTimeOverlap(requestedStartUtc, requestedEndUtc, timeToMinutes(di.startTime), timeToMinutes(di.endTime)))) {
           available = false;
         }
       }
@@ -275,7 +281,7 @@ router.post('/check-availability', async (req, res) => {
           date,
           status: 'Active',
         });
-        if (coachingSessions.some(session => isTimeOverlap(requestedStart, requestedEnd, timeToMinutes(session.startTime), timeToMinutes(session.endTime)))) {
+        if (coachingSessions.some(session => isTimeOverlap(requestedStartUtc, requestedEndUtc, timeToMinutes(session.startTime), timeToMinutes(session.endTime)))) {
           available = false;
         }
       }
@@ -284,7 +290,7 @@ router.post('/check-availability', async (req, res) => {
       if (available) {
         const courtPricing = resolvedRates.activeCourts.find((p) => Number(p.courtNumber) === i);
         if (courtPricing) {
-          if (isRequestedRangeUnavailable(courtPricing.rates, requestedStart, requestedEnd)) {
+          if (isRequestedRangeUnavailable(courtPricing.rates, requestedLocalStart, requestedLocalEnd)) {
             available = false;
           } else {
             price = calculatePrice(courtPricing.rates, resolvedRates.localStartTime, duration);
@@ -441,16 +447,11 @@ router.patch('/modify-booking', async (req, res) => {
     const sportData = academy.sports.find(s => s.sportName === sport);
     if (!sportData) return res.status(404).json({ message: 'Sport not offered' });
 
-    // Convert startTime and duration to minutes
-    const requestedStart = timeToMinutes(startTime);
-    const requestedEnd = requestedStart + duration;
+    // Keep overlap checks in UTC, matching stored booking/drop-in/coaching timestamps.
+    const requestedStartUtc = timeToMinutes(startTime);
+    const requestedEndUtc = requestedStartUtc + duration;
     const academyStart = timeToMinutes(sportData.startTime);
     const academyEnd = timeToMinutes(sportData.endTime);
-
-    // Check academy hours
-    if (requestedStart < academyStart || requestedEnd > academyEnd) {
-      return res.status(400).json({ message: 'Requested time outside academy hours' });
-    }
 
     // Check for overlapping bookings on the same court
     const overlappingBookings = await Booking.find({
@@ -465,7 +466,7 @@ router.patch('/modify-booking', async (req, res) => {
     for (let b of overlappingBookings) {
       const bookingStart = timeToMinutes(b.startTime);
       const bookingEnd = timeToMinutes(b.endTime);
-      if (isTimeOverlap(requestedStart, requestedEnd, bookingStart, bookingEnd)) {
+      if (isTimeOverlap(requestedStartUtc, requestedEndUtc, bookingStart, bookingEnd)) {
         return res.status(400).json({ message: 'Requested slot is already booked' });
       }
     }
@@ -481,7 +482,7 @@ router.patch('/modify-booking', async (req, res) => {
     for (let session of overlappingDropIns) {
       const dropInStart = timeToMinutes(session.startTime);
       const dropInEnd = timeToMinutes(session.endTime);
-      if (isTimeOverlap(requestedStart, requestedEnd, dropInStart, dropInEnd)) {
+      if (isTimeOverlap(requestedStartUtc, requestedEndUtc, dropInStart, dropInEnd)) {
         return res.status(400).json({ message: 'Requested slot is reserved for a Drop-In session' });
       }
     }
@@ -497,7 +498,7 @@ router.patch('/modify-booking', async (req, res) => {
     for (let session of overlappingCoachingSessions) {
       const coachingStart = timeToMinutes(session.startTime);
       const coachingEnd = timeToMinutes(session.endTime);
-      if (isTimeOverlap(requestedStart, requestedEnd, coachingStart, coachingEnd)) {
+      if (isTimeOverlap(requestedStartUtc, requestedEndUtc, coachingStart, coachingEnd)) {
         return res.status(400).json({ message: 'Requested slot is reserved for a Coaching class' });
       }
     }
@@ -517,11 +518,19 @@ router.patch('/modify-booking', async (req, res) => {
       return res.status(400).json({ message: resolvedRates.error });
     }
 
+    const requestedLocalStart = timeToMinutes(resolvedRates.localStartTime);
+    const requestedLocalEnd = requestedLocalStart + duration;
+
+    // Check academy hours in academy-local time.
+    if (requestedLocalStart < academyStart || requestedLocalEnd > academyEnd) {
+      return res.status(400).json({ message: 'Requested time outside academy hours' });
+    }
+
     // Calculate new price
     const courtPricing = resolvedRates.activeCourts.find((p) => Number(p.courtNumber) === Number(courtNumber));
     if (!courtPricing) return res.status(404).json({ message: 'Court pricing not found' });
 
-    if (isRequestedRangeUnavailable(courtPricing.rates, requestedStart, requestedEnd)) {
+    if (isRequestedRangeUnavailable(courtPricing.rates, requestedLocalStart, requestedLocalEnd)) {
       return res.status(400).json({ message: 'Selected slot is marked unavailable by academy' });
     }
 
@@ -530,7 +539,7 @@ router.patch('/modify-booking', async (req, res) => {
     // Update booking
     booking.date = date;
     booking.startTime = startTime;
-    booking.endTime = minutesToTime(requestedEnd);
+    booking.endTime = minutesToTime(requestedEndUtc);
     booking.courtNumber = courtNumber;
     booking.price = price;
 

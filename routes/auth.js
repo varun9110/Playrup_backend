@@ -6,23 +6,66 @@ const { encrypt } = require('../utils/helperFunctions');
 const bcrypt = require('bcryptjs');
 const { issueToken, getTokenExpiryDate } = require('../middleware/authMiddleware');
 
+const normalizeEmail = (value = '') => String(value || '').trim().toLowerCase();
+const normalizePhone = (value = '') => String(value || '').trim();
+
+const buildBaseName = ({ name, email, phone }) => {
+  const trimmedName = String(name || '').trim();
+  if (trimmedName) {
+    return trimmedName.toLowerCase();
+  }
+
+  const emailPrefix = String(email || '').split('@')[0]?.trim();
+  if (emailPrefix) {
+    return emailPrefix.toLowerCase();
+  }
+
+  const phoneDigits = String(phone || '').replace(/\D/g, '');
+  const suffix = phoneDigits.slice(-6) || Date.now().toString().slice(-6);
+  return `player_${suffix}`;
+};
+
+const resolveUniqueName = async ({ name, email, phone }) => {
+  const baseName = buildBaseName({ name, email, phone });
+  let candidate = baseName;
+  let index = 1;
+
+  while (await User.exists({ name: candidate })) {
+    index += 1;
+    candidate = `${baseName}_${index}`;
+  }
+
+  return candidate;
+};
+
 router.post('/register', async (req, res) => {
   try {
-    const { email, password, phone } = req.body;
+    const { email, password, phone, name } = req.body;
     if (!email || !password || !phone) {
       return res.status(400).json({ message: 'All fields are required', error: 'All fields required' });
     }
 
-    let user = await User.findOne({ $or: [{ email }, { phone }] });
+    const normalizedEmail = normalizeEmail(email);
+    const normalizedPhone = normalizePhone(phone);
+
+    let user = await User.findOne({ $or: [{ email: normalizedEmail }, { phone: normalizedPhone }] });
     if (user) return res.status(400).json({ message: 'User with given email or phone already exists', error: 'User exists' });
 
     const hashedPassword = await bcrypt.hash(password, 10);
     const otp = generateOTP();
     const otpExpiry = new Date(Date.now() + 5 * 60 * 1000);
+    const uniqueName = await resolveUniqueName({ name, email: normalizedEmail, phone: normalizedPhone });
 
-    user = new User({ email, password: hashedPassword, phone, otp, otpExpiry });
+    user = new User({
+      name: uniqueName,
+      email: normalizedEmail,
+      password: hashedPassword,
+      phone: normalizedPhone,
+      otp,
+      otpExpiry
+    });
     await user.save();
-    await sendOTP(phone, otp);
+    await sendOTP(normalizedPhone, otp);
 
     res.json({ message: 'OTP sent to phone number', success: 'otp created' });
   } catch (error) {
